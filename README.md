@@ -1,4 +1,4 @@
-# 单词复习本 Pro (Word Review Pro)
+# 单词复习本(单词学习)
 📌 **基础信息**  
 - 版本：v20 (AI Struct)  
 - 类型：单文件 HTML 离线 Web 应用 + 线上可访问  
