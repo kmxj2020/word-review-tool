@@ -2,8 +2,8 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>单词复习本 Pro v3.0 (最终完整版)</title>
+    <title>单词复习本 Pro v20 (AI Struct)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
     <!-- 引入核心库 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
@@ -11,11 +11,52 @@
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     
+    <!-- Tailwind Configuration -->
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        dark: {
+                            bg: '#0f172a',      // slate-900
+                            card: '#1e293b',    // slate-800
+                            text: '#f1f5f9',    // slate-100
+                            subtext: '#94a3b8', // slate-400
+                            input: '#334155'    // slate-700
+                        }
+                    },
+                    animation: {
+                        'shake': 'shake 0.5s cubic-bezier(.36,.07,.19,.97) both',
+                        'pop': 'pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards',
+                        'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    },
+                    keyframes: {
+                        shake: {
+                            '0%, 100%': { transform: 'translateX(0)' },
+                            '10%, 30%, 50%, 70%, 90%': { transform: 'translateX(-4px)' },
+                            '20%, 40%, 60%, 80%': { transform: 'translateX(4px)' },
+                        },
+                        pop: {
+                            '0%': { transform: 'scale(0.9)', opacity: 0 },
+                            '100%': { transform: 'scale(1)', opacity: 1 },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; }
+        body { 
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; 
+            -webkit-tap-highlight-color: transparent; 
+            transition: background-color 0.3s ease, color 0.3s ease;
+        }
         .scrollbar-hide::-webkit-scrollbar { display: none; }
         .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
         textarea { resize: none; }
+        .font-phonetic { font-family: "Times New Roman", serif; }
         
         @keyframes blob {
             0% { transform: translate(0px, 0px) scale(1); }
@@ -28,145 +69,105 @@
         .animation-delay-4000 { animation-delay: 4s; }
         
         .glass-card {
-            background: rgba(255, 255, 255, 0.75);
+            background: rgba(255, 255, 255, 0.85);
             backdrop-filter: blur(20px);
             -webkit-backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.6);
             box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+            transition: background-color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
         }
+        
+        .dark .glass-card {
+            background: rgba(30, 41, 59, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.3);
+        }
+
+        .phonetic-card { transition: all 0.2s; }
+        .phonetic-card:active { transform: scale(0.95); }
+        
+        @keyframes slide-down {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-slide-down { animation: slide-down 0.2s ease-out; }
     </style>
 </head>
-<body class="bg-slate-50 min-h-screen">
+<body class="bg-slate-50 dark:bg-slate-900 min-h-screen overscroll-none text-slate-800 dark:text-slate-100 transition-colors duration-300">
     <div id="root"></div>
 
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
-        
-        // --- 国际化字典 ---
-        const I18N = {
-            zh: {
-                title: "单词复习本",
-                browse: "浏览",
-                spelling: "拼写",
-                list: "管理",
-                import: "导入",
-                active: "学习中",
-                archived: "已归档",
-                empty_browse: "没有待复习的单词 (或已全部归档)",
-                empty_spelling: "当前筛选条件下没有单词！",
-                no_phonetic: "无音标",
-                auto_phonetic: "自动补全音标",
-                fetching: "获取中...",
-                clear_all: "清空",
-                clear_confirm: "确定清空所有单词吗？",
-                import_title: "导入数据",
-                import_click: "点击上传文件",
-                import_desc: "支持 Excel 另存的文本/CSV，或直接粘贴",
-                import_ph: "在此直接粘贴内容...",
-                import_btn: "开始导入",
-                import_success: (n) => `识别成功！发现 ${n} 个单词。\n覆盖词库请点[确定]，追加请点[取消]。`,
-                import_fail: "无法识别。请确保格式正确。",
-                spelling_setup: "拼写测试配置",
-                scope: "复习范围",
-                scope_all: "全部活跃",
-                scope_fav: "我的收藏",
-                scope_new: "未掌握",
-                mode: "顺序模式",
-                mode_random: "随机乱序",
-                mode_seq: "词表顺序",
-                hint: "提示模式",
-                hint_copy: "抄写模式 (显示单词)",
-                hint_blind: "默写模式 (仅看中文)",
-                count: "测试数量",
-                count_all: "全部",
-                start: "开始测试",
-                result: "测试完成!",
-                correct: "正确",
-                wrong: "错误",
-                back_setup: "返回设置",
-                translate_this: "翻译这个单词",
-                type_ph: "输入单词...",
-                press_enter_check: "按 Enter 检查",
-                press_enter_next: "按 Enter 继续",
-                try_again: "再试一次!",
-                archive_btn: "归档",
-                unarchive_btn: "恢复",
-                source: "来源",
-                note: "笔记 / 例句",
-                key_meaning: "助记 / 核心义",
-                key_meaning_ph: "点击下方标签快速添加，自动带词性...",
-                quick_pick: "智能提炼:",
-                pos_label: "词性",
-                export_btn: "导出备份"
-            },
-            en: {
-                title: "Word Review",
-                browse: "Browse",
-                spelling: "Spelling",
-                list: "Manage",
-                import: "Import",
-                active: "Active",
-                archived: "Archived",
-                empty_browse: "No words to review (or all archived)",
-                empty_spelling: "No words available with current filter!",
-                no_phonetic: "No Phonetic",
-                auto_phonetic: "Auto Phonetic",
-                fetching: "Fetching...",
-                clear_all: "Clear All",
-                clear_confirm: "Clear all words?",
-                import_title: "Import Data",
-                import_click: "Upload File",
-                import_desc: "Supports Excel text/CSV or Paste below",
-                import_ph: "Paste content here...",
-                import_btn: "Start Import",
-                import_success: (n) => `Success! Found ${n} words.\nClick OK to Overwrite, Cancel to Append.`,
-                import_fail: "Failed to parse. Check format.",
-                spelling_setup: "Spelling Setup",
-                scope: "Scope",
-                scope_all: "All Active",
-                scope_fav: "Favorites",
-                scope_new: "Unmastered",
-                mode: "Order",
-                mode_random: "Random Shuffle",
-                mode_seq: "Sequential",
-                hint: "Hint Mode",
-                hint_copy: "Copy (Show Word)",
-                hint_blind: "Blind (Meaning Only)",
-                count: "Count",
-                count_all: "All",
-                start: "Start Test",
-                result: "Test Completed!",
-                correct: "Correct",
-                wrong: "Wrong",
-                back_setup: "Back to Setup",
-                translate_this: "TRANSLATE THIS",
-                type_ph: "Type word...",
-                press_enter_check: "Press Enter to Check",
-                press_enter_next: "Press Enter to Continue",
-                try_again: "Try again!",
-                archive_btn: "Archive",
-                unarchive_btn: "Unarchive",
-                source: "Source",
-                note: "Note / Example",
-                key_meaning: "Key Meaning / Memo",
-                key_meaning_ph: "Click tags below to add with POS...",
-                quick_pick: "Smart Picks:",
-                pos_label: "POS",
-                export_btn: "Export"
+        const { useState, useEffect, useRef, useMemo } = React;
+
+        // ==========================================
+        // 1. AI Service (DeepSeek)
+        // ==========================================
+        const callDeepSeek = async (apiKey, word, contextNote) => {
+            const url = "https://api.deepseek.com/chat/completions";
+            const prompt = `
+            I am learning English words.
+            Target Word: "${word}"
+            My Current Note (Context): "${contextNote || "No context provided."}"
+
+            Please perform the following tasks and output strictly in JSON format:
+            1. "analysis": Analyze the sentences in my note. If a sentence is missing a Chinese translation, provide it. Also, explain the specific meaning of "${word}" in that sentence. Answer in Chinese.
+            2. "new_example": Generate ONE new, high-quality example sentence using "${word}" that is different from the note, including its Chinese translation.
+
+            JSON Format Requirement:
+            {
+                "analysis": [
+                    { "sentence": "The English sentence from note", "translation": "Chinese translation", "word_meaning": "Meaning of '${word}' here" }
+                ],
+                "new_example": {
+                    "sentence": "New English sentence",
+                    "translation": "Chinese translation"
+                }
+            }
+            If the note contains multiple sentences, analyze each one in the "analysis" array. If the note is empty, leave "analysis" empty.
+            `;
+
+            try {
+                const response = await fetch(url, {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                        "Authorization": `Bearer ${apiKey}`
+                    },
+                    body: JSON.stringify({
+                        model: "deepseek-chat",
+                        messages: [
+                            { role: "system", content: "You are a helpful English vocabulary tutor. You always respond with valid JSON." },
+                            { role: "user", content: prompt }
+                        ],
+                        response_format: { type: "json_object" }
+                    })
+                });
+
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error?.message || "API Request Failed");
+                }
+
+                const data = await response.json();
+                const content = data.choices[0].message.content;
+                return JSON.parse(content);
+            } catch (error) {
+                console.error("AI Error:", error);
+                throw error;
             }
         };
 
-        // --- 图标组件 ---
-        const IconBase = ({ children, size = 24, className = "", ...props }) => (
-            <svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{children}</svg>
-        );
+        // ==========================================
+        // 2. Icons & UI Components
+        // ==========================================
+        const IconBase = ({ children, size = 18, className = "", ...props }) => (<svg xmlns="http://www.w3.org/2000/svg" width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className} {...props}>{children}</svg>);
+        
         const Icons = {
             BookOpen: (p) => <IconBase {...p}><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></IconBase>,
             Check: (p) => <IconBase {...p}><polyline points="20 6 9 17 4 12"/></IconBase>,
             X: (p) => <IconBase {...p}><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></IconBase>,
-            RotateCcw: (p) => <IconBase {...p}><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></IconBase>,
             Plus: (p) => <IconBase {...p}><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></IconBase>,
-            Trash2: (p) => <IconBase {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></IconBase>,
+            Trash2: (p) => <IconBase {...p}><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2-2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></IconBase>,
             Upload: (p) => <IconBase {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></IconBase>,
             Download: (p) => <IconBase {...p}><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></IconBase>,
             List: (p) => <IconBase {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></IconBase>,
@@ -177,595 +178,550 @@
             Star: (p) => <IconBase {...p}><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></IconBase>,
             Eye: (p) => <IconBase {...p}><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></IconBase>,
             FileText: (p) => <IconBase {...p}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></IconBase>,
-            RefreshCw: (p) => <IconBase {...p}><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></IconBase>,
-            Keyboard: (p) => <IconBase {...p}><rect x="2" y="4" width="20" height="16" rx="2" ry="2"/><line x1="6" y1="8" x2="6" y2="8"/><line x1="10" y1="8" x2="10" y2="8"/><line x1="14" y1="8" x2="14" y2="8"/><line x1="18" y1="8" x2="18" y2="8"/><line x1="6" y1="12" x2="6" y2="12"/><line x1="10" y1="12" x2="10" y2="12"/><line x1="14" y1="12" x2="14" y2="12"/><line x1="18" y1="12" x2="18" y2="12"/><line x1="6" y1="16" x2="6" y2="16"/><line x1="10" y1="16" x2="14" y2="16"/><line x1="18" y1="16" x2="18" y2="16"/></IconBase>,
             Link: (p) => <IconBase {...p}><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></IconBase>,
             Wand2: (p) => <IconBase {...p}><path d="m21.64 3.64-1.28-1.28a1.21 1.21 0 0 0-1.72 0L2.36 18.64a1.21 1.21 0 0 0 0 1.72l1.28 1.28a1.2 1.2 0 0 0 1.72 0L21.64 5.36a1.2 1.2 0 0 0 0-1.72Z"/><path d="m14 7 3 3"/><path d="M5 6v4"/><path d="M19 14v4"/><path d="M10 2v2"/><path d="M7 8H3"/><path d="M21 16h-4"/><path d="M11 3H9"/></IconBase>,
             Archive: (p) => <IconBase {...p}><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></IconBase>,
             Globe: (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></IconBase>,
-            PenTool: (p) => <IconBase {...p}><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></IconBase>
+            PenTool: (p) => <IconBase {...p}><path d="m12 19 7-7 3 3-7 7-3-3z"/><path d="m18 13-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="m2 2 7.586 7.586"/><circle cx="11" cy="11" r="2"/></IconBase>,
+            HelpCircle: (p) => <IconBase {...p}><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></IconBase>,
+            SortAsc: (p) => <IconBase {...p}><path d="m11 16 4 4 4-4"/><path d="M15 20V4"/><path d="M4 19h5"/><path d="M4 15h6"/><path d="M4 11h8"/><path d="M4 7h4"/></IconBase>,
+            SortDesc: (p) => <IconBase {...p}><path d="m11 8 4-4 4 4"/><path d="M15 4v16"/><path d="M4 19h4"/><path d="M4 15h8"/><path d="M4 11h6"/><path d="M4 7h5"/></IconBase>,
+            SortList: (p) => <IconBase {...p}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></IconBase>,
+            ChevronDown: (p) => <IconBase {...p}><path d="m6 9 6 6 6-6"/></IconBase>,
+            Moon: (p) => <IconBase {...p}><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path></IconBase>,
+            Sun: (p) => <IconBase {...p}><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></IconBase>,
+            Split: (p) => <IconBase {...p}><line x1="8" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="16" y2="21"/><line x1="2" y1="12" x2="22" y2="12"/></IconBase>,
+            Game: (p) => <IconBase {...p}><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 1 1 8-8 8 8 0 0 1-8 8z"/><polygon points="10 8 16 12 10 16 10 8"/></IconBase>,
+            Settings: (p) => <IconBase {...p}><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></IconBase>,
+            Sparkles: (p) => <IconBase {...p}><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L12 21l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/></IconBase>,
+            Key: (p) => <IconBase {...p}><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/></IconBase>
         };
 
-        // --- 辅助函数 ---
-        const extractPOS = (translation) => {
-            if (!translation) return { pos: "", cleanTrans: "" };
-            // 扫描所有词性
-            const posPattern = /^([a-z]{1,5}\.(?:[ \t]*[&,/][ \t]*[a-z]{1,5}\.)?)/i;
-            let combinedPos = new Set();
-            const lines = translation.split('\n');
-            lines.forEach(line => {
-                const match = line.trim().match(posPattern);
-                if (match) combinedPos.add(match[1]);
-            });
-            if (combinedPos.size === 0) {
-                const startMatch = translation.trim().match(posPattern);
-                if (startMatch) combinedPos.add(startMatch[1]);
-            }
-            // 剥离第一个词性
-            let cleanTrans = translation;
-            const firstMatch = translation.match(/^([a-z]{1,5}\.(?:[ \t]*[&,/][ \t]*[a-z]{1,5}\.)?)\s*([\s\S]*)/i);
-            if (firstMatch) {
-                cleanTrans = firstMatch[2]; 
-            }
-            return { 
-                pos: Array.from(combinedPos).join(' '), 
-                cleanTrans: cleanTrans || translation 
-            };
+        const Toast = ({ msg, type, onClose }) => {
+            useEffect(() => { const t = setTimeout(onClose, 2000); return () => clearTimeout(t); }, []);
+            const bg = type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-gray-800';
+            return <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full shadow-lg text-white text-sm font-bold ${bg} animate-slide-down`}>{msg}</div>;
         };
 
-        // Context-Aware POS Tag Parser
-        const parseTranslationTags = (text) => {
-            if (!text) return [];
-            const splitText = text.replace(/[\n\r；;，,]/g, '|');
-            const parts = splitText.split('|').map(s => s.trim()).filter(s => s);
-            const tags = [];
-            let currentPos = ""; 
-            const posStartRegex = /^([a-z]{1,5}\.(?:[ \t]*[&,/][ \t]*[a-z]{1,5}\.)?)\s*(.*)/i;
-
-            parts.forEach(part => {
-                const match = part.match(posStartRegex);
-                if (match) {
-                    currentPos = match[1];
-                    const content = match[2];
-                    if (content) tags.push(currentPos + " " + content);
-                } else {
-                    if (currentPos) tags.push(currentPos + " " + part);
-                    else tags.push(part);
-                }
-            });
-            return tags;
-        };
-
-        const extractPOSForList = (translation) => {
-            const tags = parseTranslationTags(translation);
-            const uniquePos = [...new Set(tags.map(t => t.pos).filter(Boolean))];
-            return uniquePos.join(' ');
-        };
-
-        const parseExcelClipboard = (text) => {
-            const rows = []; let currentRow = []; let currentCell = ""; let inQuote = false;
-            for (let i = 0; i < text.length; i++) {
-                const char = text[i]; const nextChar = text[i + 1];
-                if (inQuote) {
-                    if (char === '"') { if (nextChar === '"') { currentCell += '"'; i++; } else { inQuote = false; } } else { currentCell += char; }
-                } else {
-                    if (char === '"') { inQuote = true; } 
-                    else if (char === '\t') { currentRow.push(currentCell.trim()); currentCell = ""; } 
-                    else if (char === '\n' || char === '\r') { if (char === '\r' && nextChar === '\n') i++; currentRow.push(currentCell.trim()); rows.push(currentRow); currentRow = []; currentCell = ""; } 
-                    else { currentCell += char; }
-                }
-            }
-            if (currentCell || currentRow.length > 0) { currentRow.push(currentCell.trim()); rows.push(currentRow); }
-            return rows;
-        };
-
-        // --- 组件 ---
         const GlassButton = ({ onClick, active, iconName, label, className = "" }) => {
             const Icon = Icons[iconName];
             return (
-                <button onClick={onClick} className={`flex items-center justify-center px-4 py-2 rounded-xl transition-all duration-300 font-medium text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${active ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/30' : 'bg-white/50 text-gray-600 hover:bg-white/80 hover:text-indigo-600'} ${className}`}>
-                    {Icon && <Icon size={16} className={label ? "mr-2" : ""} />} {label}
+                <button onClick={onClick} className={`flex items-center justify-center px-3 py-2 rounded-xl transition-all duration-300 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 ${active ? 'bg-indigo-600/90 text-white shadow-lg shadow-indigo-500/30' : 'bg-white/50 dark:bg-slate-700/50 text-gray-600 dark:text-gray-300 hover:bg-white/80 dark:hover:bg-slate-700 hover:text-indigo-600 dark:hover:text-white'} ${className}`}>
+                    {Icon && <Icon size={16} className={label ? "mr-1" : ""} />} {label}
                 </button>
             );
         };
 
-        const DEMO_DATA = [{ id: 1, word: "taught", translation: "v. 教授 (teach 的过去分词)", phonetic: "英 [tɔːt]", mastered: false, isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 }, note: "Eason Chan only <b>taught</b> me how to sing.", source: "Lyrics", keyMeaning: "v. 教授" }];
+        const SortMenu = ({ sortMode, setSortMode, t }) => {
+            const [isOpen, setIsOpen] = useState(false);
+            const menuRef = useRef(null);
+            useEffect(() => {
+                const handleClickOutside = (event) => { if (menuRef.current && !menuRef.current.contains(event.target)) setIsOpen(false); };
+                document.addEventListener("mousedown", handleClickOutside);
+                return () => document.removeEventListener("mousedown", handleClickOutside);
+            }, []);
+            const options = [{ id: 'default', label: t.sort_default, icon: 'SortList' }, { id: 'az', label: t.sort_az, icon: 'SortAsc' }, { id: 'za', label: t.sort_za, icon: 'SortDesc' }, { id: 'random', label: t.sort_random, icon: 'Shuffle' }];
+            const activeOption = options.find(o => o.id === sortMode) || options[0];
+            const ActiveIcon = Icons[activeOption.icon];
+            return (
+                <div className="relative" ref={menuRef}>
+                    <button onClick={() => setIsOpen(!isOpen)} className="flex items-center bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded-lg text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600 transition"><ActiveIcon size={14} className="mr-1" /><span className="mr-1 hidden sm:inline">{activeOption.label}</span><Icons.ChevronDown size={12} /></button>
+                    {isOpen && (<div className="absolute top-full left-0 mt-1 w-32 bg-white dark:bg-slate-800 rounded-xl shadow-xl border border-gray-100 dark:border-slate-700 z-30 overflow-hidden animate-slide-down">{options.map(opt => { const OptIcon = Icons[opt.icon]; return (<button key={opt.id} onClick={() => { setSortMode(opt.id); setIsOpen(false); }} className={`w-full text-left px-4 py-3 text-xs font-medium flex items-center hover:bg-gray-50 dark:hover:bg-slate-700 transition ${sortMode === opt.id ? 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-slate-700' : 'text-gray-600 dark:text-gray-400'}`}><OptIcon size={14} className="mr-2" />{opt.label}</button>); })}</div>)}
+                </div>
+            );
+        };
 
-        function WordReviewApp() {
-            const [words, setWords] = useState(() => {
-                try {
-                    const saved = localStorage.getItem('my_vocab_data_v6_pro');
-                    return saved ? JSON.parse(saved) : DEMO_DATA;
-                } catch (e) { return DEMO_DATA; }
-            });
-            const [lang, setLang] = useState('zh'); 
-            const [sessionStats, setSessionStats] = useState({ correct: 0, wrong: 0 });
-            const [view, setView] = useState('browse'); 
-            const [browseIndex, setBrowseIndex] = useState(0);
-            const [spellingStep, setSpellingStep] = useState('setup'); 
-            const [spellingConfig, setSpellingConfig] = useState({ mode: 'random', count: 5, hint: 'copy', errorMode: 'retry', scope: 'all' });
-            const [spellingQueue, setSpellingQueue] = useState([]);
-            const [spellingIndex, setSpellingIndex] = useState(0);
-            const [spellingInput, setSpellingInput] = useState('');
-            const [spellingFeedback, setSpellingFeedback] = useState('idle'); 
-            const [importText, setImportText] = useState('');
-            const [isFetchingPhonetics, setIsFetchingPhonetics] = useState(false);
-            const [listTab, setListTab] = useState('active'); 
-            const inputRef = useRef(null);
-            const t = I18N[lang];
+        const SettingsModal = ({ isOpen, onClose, apiKey, setApiKey }) => {
+            const [val, setVal] = useState(apiKey);
+            if (!isOpen) return null;
+            return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}>
+                    <div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-md p-6 transition-colors" onClick={e => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-gray-800 dark:text-white mb-4 flex items-center"><Icons.Settings size={20} className="mr-2 text-indigo-500"/> Settings</h3>
+                        <div className="mb-4">
+                            <label className="block text-xs font-bold text-gray-500 dark:text-gray-400 uppercase mb-2">DeepSeek API Key</label>
+                            <div className="relative"><Icons.Key className="absolute left-3 top-3 text-gray-400" size={16}/><input type="password" value={val} onChange={e => setVal(e.target.value)} className="w-full pl-10 pr-3 py-2.5 border rounded-xl bg-gray-50 dark:bg-slate-700/50 border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:outline-none text-sm" placeholder="sk-..." /></div>
+                            <div className="mt-2 text-[10px] text-gray-400">Keys are stored locally in your browser.</div>
+                        </div>
+                        <div className="flex justify-end space-x-3"><button onClick={onClose} className="px-4 py-2 text-sm font-bold text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-lg transition">Cancel</button><button onClick={() => { setApiKey(val); onClose(); }} className="px-4 py-2 text-sm font-bold bg-indigo-600 text-white rounded-lg shadow hover:bg-indigo-700 transition">Save</button></div>
+                    </div>
+                </div>
+            );
+        };
 
-            const activeWords = words.filter(w => !w.archived);
-            const archivedWords = words.filter(w => w.archived);
+        const PHONETIC_DATA = { vowels: { title: "元音 (Vowels)", color: "text-blue-600 dark:text-blue-400", bg: "bg-blue-50 dark:bg-blue-900/30", groups: [ { name: "单元音", items: [{ symbol: "[iː]", sound: "衣", tip: "长音, 嘴角拉开" }, { symbol: "[ɪ]", sound: "衣", tip: "短急" }, { symbol: "[e]", sound: "哎", tip: "小口" }, { symbol: "[æ]", sound: "哎", tip: "大口梅花" }, { symbol: "[ɜː]", sound: "饿", tip: "长卷舌" }, { symbol: "[ə]", sound: "饿", tip: "短轻" }, { symbol: "[ʌ]", sound: "啊", tip: "短促" }, { symbol: "[uː]", sound: "乌", tip: "长圆唇" }, { symbol: "[ʊ]", sound: "乌", tip: "短放松" }, { symbol: "[ɔː]", sound: "嗷", tip: "长音" }, { symbol: "[ɒ]", sound: "嗷", tip: "短大口" }, { symbol: "[ɑː]", sound: "啊", tip: "长张嘴" }] }, { name: "双元音", items: [{ symbol: "[eɪ]", sound: "A", tip: "字母A" }, { symbol: "[aɪ]", sound: "爱", tip: "滑向小口" }, { symbol: "[ɔɪ]", sound: "奥一", tip: "boy尾音" }, { symbol: "[əʊ]", sound: "欧", tip: "go发音" }, { symbol: "[aʊ]", sound: "奥呜", tip: "狼叫" }, { symbol: "[ɪə]", sound: "衣饿", tip: "ear" }, { symbol: "[eə]", sound: "哎饿", tip: "air" }, { symbol: "[ʊə]", sound: "乌饿", tip: "tour" }] } ] }, consonants: { title: "辅音 (Consonants)", color: "text-emerald-600 dark:text-emerald-400", bg: "bg-emerald-50 dark:bg-emerald-900/30", groups: [ { name: "清辅音", items: [{ symbol: "[p]", sound: "泼", tip: "喷气" }, { symbol: "[t]", sound: "特", tip: "抵上齿" }, { symbol: "[k]", sound: "嗑", tip: "像咳嗽" }, { symbol: "[f]", sound: "扶", tip: "咬下唇" }, { symbol: "[s]", sound: "嘶", tip: "蛇吐信" }, { symbol: "[θ]", sound: "嘶", tip: "咬舌尖" }, { symbol: "[ʃ]", sound: "狮", tip: "嘘声" }, { symbol: "[tʃ]", sound: "吃", tip: "短促" }, { symbol: "[tr]", sound: "戳", tip: "圆唇" }, { symbol: "[ts]", sound: "呲", tip: "像次" }, { symbol: "[h]", sound: "喝", tip: "哈气" }] }, { name: "浊辅音", items: [{ symbol: "[b]", sound: "伯", tip: "短促" }, { symbol: "[d]", sound: "德", tip: "短促" }, { symbol: "[g]", sound: "哥", tip: "短促" }, { symbol: "[v]", sound: "薇", tip: "咬唇震动" }, { symbol: "[z]", sound: "嗞", tip: "蜜蜂" }, { symbol: "[ð]", sound: "嗞", tip: "咬舌震动" }, { symbol: "[ʒ]", sound: "日", tip: "卷舌" }, { symbol: "[dʒ]", sound: "枝", tip: "短促" }, { symbol: "[dr]", sound: "捉", tip: "圆唇" }, { symbol: "[dz]", sound: "子", tip: "震动" }, { symbol: "[r]", sound: "弱", tip: "卷舌" }, { symbol: "[m]", sound: "摸", tip: "闭嘴" }, { symbol: "[n]", sound: "呢", tip: "张嘴" }, { symbol: "[ŋ]", sound: "嗯", tip: "后鼻音" }, { symbol: "[l]", sound: "乐", tip: "抵上颚" }, { symbol: "[j]", sound: "爷", tip: "yes头" }, { symbol: "[w]", sound: "我", tip: "圆唇" }] } ] } };
+        const DEMO_DATA = [
+            { id: 1, word: "taught", translation: "v. 教授 (teach 的过去分词)", phonetic: "英 [tɔːt] 美 [tɔːt]", mastered: false, isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 }, note: `Eason Chan only <b>taught</b> me how to sing ten years, but did not teach me how to go for ten years.\n陈奕迅只教给我十年怎么唱，却没教给我十年怎么走。\n\nMy uncle <b>taught</b> me to juggle.\n我叔叔教我玩杂耍。\n\nMy mother <b>taught</b> me how to sew.\n我母亲教我做针线。`, source: "Lyrics", keyMeaning: "v. 教授" },
+            { id: 2, word: "unique", translation: "adj. 独一无二的，独特的；非常特别的", phonetic: "英 [juˈniːk]", mastered: false, isFavorite: true, archived: false, stats: { correct: 0, wrong: 0 }, note: "You are unique.", source: "Demo", keyMeaning: "adj. 独一无二的" }
+        ];
 
-            useEffect(() => { localStorage.setItem('my_vocab_data_v6_pro', JSON.stringify(words)); }, [words]);
-            useEffect(() => { if (view === 'spelling' && spellingStep === 'game' && inputRef.current) inputRef.current.focus(); }, [view, spellingStep, spellingIndex, spellingFeedback]);
+        const I18N = {
+            zh: { title: "单词复习本", browse: "浏览", spelling: "拼写", list: "管理", import: "导入", phonetic_table: "拟音", active: "学习中", archived: "已归档", empty_browse: "恭喜！没有待复习的单词", empty_spelling: "列表为空", no_phonetic: "无音标", auto_phonetic: "补全", fetching: "获取中...", clear_all: "清空", import_title: "导入数据", import_click: "上传文件", import_desc: "支持 Excel/TXT", import_ph: "在此粘贴...", import_btn: "开始导入", import_success: (n) => `成功导入 ${n} 个单词！`, import_fail: "无法识别", spelling_setup: "拼写配置", scope: "范围", scope_all: "全部", scope_fav: "收藏", scope_new: "未掌握", mode: "顺序", mode_random: "随机", mode_seq: "顺序", hint: "提示", hint_copy: "抄写", hint_blind: "默写", count: "数量", count_all: "全部", start: "开始挑战", result: "挑战完成", correct: "正确", wrong: "错误", back_setup: "返回配置", translate_this: "请拼写", type_ph: "输入单词...", press_enter_check: "按 Enter 检查", press_enter_next: "按 Enter 继续", try_again: "再试一次", archive_btn: "归档", unarchive_btn: "恢复", source: "来源", note: "笔记", key_meaning: "助记", quick_pick: "提炼:", pos_label: "词性", export_btn: "导出", phonetic_help: "拟音表", sort: "排序", sort_default: "默认", sort_az: "A-Z", sort_za: "Z-A", sort_random: "随机", syllable_mode: "音节模式", spelling_mode: "模式", spelling_scope: "范围", spelling_count: "题量", spelling_hint: "提示", peek: "按住看词", import_check: "分析内容", import_confirm: "确认导入", ai_analyze: "AI 解析", ai_analyzing: "解析中...", ai_no_key: "请先配置 API Key", ai_save: "保存", ai_saved: "已保存", ai_analysis_title: "AI 深度解析", import_exclude: "排除已存在单词 (根据拼写)" },
+            en: { title: "Word Review", browse: "Browse", spelling: "Spelling", list: "Manage", import: "Import", phonetic_table: "Phonetics", active: "Active", archived: "Archived", empty_browse: "No words", empty_spelling: "No words", no_phonetic: "No Phonetic", auto_phonetic: "Auto", fetching: "...", clear_all: "Clear", import_title: "Import", import_click: "Upload", import_desc: "Excel/TXT", import_ph: "Paste here...", import_btn: "Import", import_success: (n) => `Added ${n} words!`, import_fail: "Failed", spelling_setup: "Setup", scope: "Scope", scope_all: "All", scope_fav: "Favs", scope_new: "New", mode: "Order", mode_random: "Random", mode_seq: "Seq", hint: "Hint", hint_copy: "Copy", hint_blind: "Blind", count: "Count", count_all: "All", start: "Start Challenge", result: "Done", correct: "Correct", wrong: "Wrong", back_setup: "Back", translate_this: "SPELL IT", type_ph: "Type word...", press_enter_check: "Enter to Check", press_enter_next: "Enter to Next", try_again: "Try again", archive_btn: "Archive", unarchive_btn: "Restore", source: "Source", note: "Note", key_meaning: "Memo", quick_pick: "Pick:", pos_label: "POS", export_btn: "Export", phonetic_help: "Table", sort: "Sort", sort_default: "Default", sort_az: "A-Z", sort_za: "Z-A", sort_random: "Shuffle", syllable_mode: "Syllables", spelling_mode: "Mode", spelling_scope: "Scope", spelling_count: "Count", spelling_hint: "Hint", peek: "Hold to Peek", import_check: "Analyze", import_confirm: "Confirm Import", ai_analyze: "AI Analyze", ai_analyzing: "Thinking...", ai_no_key: "Set API Key First", ai_save: "Save", ai_saved: "Saved", ai_analysis_title: "AI Analysis", import_exclude: "Exclude Existing Words" }
+        };
+
+        const PhoneticModal = ({ isOpen, onClose }) => {
+            if (!isOpen) return null;
+            const CategorySection = ({ title, groups, color, bg }) => ( <div className={`rounded-2xl border border-gray-100 dark:border-slate-700 overflow-hidden flex flex-col h-full shadow-sm`}><div className={`${bg} px-4 py-3 font-bold ${color} border-b border-gray-100 dark:border-slate-700 flex items-center`}>{title}</div><div className="p-4 bg-white/80 dark:bg-slate-800/80 flex-1 overflow-y-auto space-y-4">{groups.map((group, idx) => (<div key={idx}><div className="text-xs font-bold text-gray-400 dark:text-gray-500 mb-2 uppercase tracking-wider">{group.name}</div><div className="grid grid-cols-3 sm:grid-cols-3 gap-2">{group.items.map((item, i) => (<div key={i} className="phonetic-card p-1.5 rounded-lg bg-gray-50 dark:bg-slate-700/50 border border-gray-100 dark:border-slate-600 flex flex-col items-center justify-center text-center hover:bg-white dark:hover:bg-slate-600 shadow-sm transition-colors"><div className={`symbol-text text-base font-bold ${color} mb-0.5`}>{item.symbol}</div><div className="text-xs font-bold text-gray-700 dark:text-gray-300">{item.sound}</div>{item.tip && <div className="text-[10px] text-gray-400 scale-90 origin-top truncate w-full">{item.tip}</div>}</div>))}</div></div>))}</div></div> );
+            return ( <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm" onClick={onClose}><div className="bg-white dark:bg-slate-800 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[90vh] flex flex-col overflow-hidden transition-colors" onClick={e => e.stopPropagation()}><div className="p-4 border-b border-gray-100 dark:border-slate-700 flex justify-between items-center bg-white dark:bg-slate-800 z-10 shrink-0"><h3 className="text-lg font-bold text-gray-800 dark:text-white flex items-center"><span className="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300 flex items-center justify-center mr-2"><span className="font-phonetic text-lg">ə</span></span> {window.innerWidth < 640 ? "拟音表" : "音标拟音对照表"}</h3><button onClick={onClose} className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-slate-700 rounded-full transition"><Icons.X size={20} /></button></div><div className="flex-1 overflow-y-auto p-4 md:p-6 bg-slate-50/50 dark:bg-slate-900/50"><div className="grid grid-cols-1 md:grid-cols-2 gap-6 h-full"><CategorySection title={PHONETIC_DATA.vowels.title} groups={PHONETIC_DATA.vowels.groups} color={PHONETIC_DATA.vowels.color} bg={PHONETIC_DATA.vowels.bg} /><CategorySection title={PHONETIC_DATA.consonants.title} groups={PHONETIC_DATA.consonants.groups} color={PHONETIC_DATA.consonants.color} bg={PHONETIC_DATA.consonants.bg} /></div></div></div></div> );
+        };
+
+        const extractPOS = (t) => { if (!t) return {pos:"",cleanTrans:""}; const p=/^([a-z]{1,5}\.(?:[ \t]*[&,/][ \t]*[a-z]{1,5}\.)?)/i; let s=new Set(), l=t.split('\n'); l.forEach(x=>{const m=x.trim().match(p);if(m)s.add(m[1])}); if(s.size===0){const m=t.trim().match(p);if(m)s.add(m[1])} return {pos:Array.from(s).join(' '),cleanTrans:t}; };
+        const parseTranslationTags = (t) => { if(!t)return[]; const p=/^([a-z]{1,5}\.(?:[ \t]*[&,/][ \t]*[a-z]{1,5}\.)?)\s*(.*)/i, ts=[]; t.replace(/[\n\r；;，,]/g,'|').split('|').map(s=>s.trim()).filter(s=>s).forEach(x=>{const m=x.match(p);if(m)ts.push(m[1]+" "+m[2]);else ts.push(x)}); return ts; };
+        const parseExcelClipboard = (text) => { const rows=[]; let r=[]; let c=""; let q=false; for(let i=0;i<text.length;i++){ const ch=text[i], n=text[i+1]; if(q){ if(ch==='"'){ if(n==='"'){c+='"';i++}else{q=false} }else{c+=ch} }else{ if(ch==='"'){q=true}else if(ch==='\t'){r.push(c.trim());c=""}else if(ch==='\n'||ch==='\r'){if(ch==='\r'&&n==='\n')i++;r.push(c.trim());rows.push(r);r=[];c=""}else{c+=ch} } } if(c||r.length>0){r.push(c.trim());rows.push(r)} return rows; };
+        const syllabify = (word) => { if (!word) return ""; if (/[^a-zA-Z]/.test(word)) { return word.split(/(\s+)/).map(part => { return /^[a-zA-Z]+$/.test(part) ? syllabify(part) : part; }).join(''); } const syllableRegex = /[^aeiouy]*[aeiouy]+(?:[^aeiouy]*$|[^aeiouy](?=[^aeiouy]))?/gi; const matches = word.match(syllableRegex); return matches ? matches.join('-') : word; };
+
+        // ==========================================
+        // 3. New Component: AI Analysis Card
+        // ==========================================
+        const AIAnalysisCard = ({ data, word, t }) => {
+            if (!data) return null;
+            return (
+                <div className="space-y-3">
+                    {data.analysis && data.analysis.length > 0 && (
+                        <div className="space-y-2">
+                            {data.analysis.map((item, idx) => (
+                                <div key={idx} className="bg-white dark:bg-slate-800/80 p-3 rounded-xl border border-purple-100 dark:border-slate-600 shadow-sm transition hover:shadow-md">
+                                    <div className="text-xs italic text-gray-500 dark:text-gray-400 mb-2 leading-relaxed font-serif">"{item.sentence}"</div>
+                                    <div className="text-sm font-bold text-gray-800 dark:text-gray-200 mb-2">{item.translation}</div>
+                                    <div className="text-xs text-purple-600 dark:text-purple-400 flex items-center bg-purple-50 dark:bg-purple-900/20 px-2 py-1.5 rounded-lg w-fit">
+                                        <span className="mr-1.5 text-base">💡</span> 
+                                        <span className="font-medium">{item.word_meaning}</span>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                    
+                    {data.new_example && (
+                        <div className="bg-gradient-to-br from-purple-50 to-indigo-50 dark:from-purple-900/20 dark:to-indigo-900/20 p-3 rounded-xl border border-purple-100 dark:border-purple-800/30 shadow-sm">
+                            <div className="text-xs font-bold text-purple-600 dark:text-purple-400 mb-2 flex items-center">
+                                <Icons.Sparkles size={12} className="mr-1" /> New Example
+                            </div>
+                            <div className="text-sm text-gray-800 dark:text-gray-200 font-medium mb-1 leading-relaxed" 
+                                 dangerouslySetInnerHTML={{ __html: data.new_example.sentence.replace(new RegExp(word, 'gi'), match => `<span class="text-purple-600 dark:text-purple-400 font-bold bg-purple-100 dark:bg-purple-900/50 px-1 rounded">${match}</span>`) }}>
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">{data.new_example.translation}</div>
+                        </div>
+                    )}
+                </div>
+            );
+        };
+
+        const BrowseView = ({ words, initialIndex, onUpdateWord, setView, onShowPhoneticTable, t, sortMode, setSortMode, syllableMode, onToggleSyllableMode, apiKey, onOpenSettings, showToast }) => {
+            const [index, setIndex] = useState(initialIndex);
+            const [aiLoading, setAiLoading] = useState(false);
+            const [aiResult, setAiResult] = useState(null); // Transient result
+            
+            const [prevWords, setPrevWords] = useState(words);
+            const [currentWordId, setCurrentWordId] = useState(null);
+
+            if (words !== prevWords) {
+                setPrevWords(words);
+                if (currentWordId) {
+                    const newIndex = words.findIndex(w => w.id === currentWordId);
+                    setIndex(newIndex !== -1 ? newIndex : 0);
+                } else {
+                    setIndex(0);
+                }
+            }
+
+            const safeIndex = (words && words.length > 0) ? (index >= words.length ? 0 : index) : 0;
+            const card = (words && words.length > 0) ? words[safeIndex] : null;
+            const smartTags = card ? parseTranslationTags(card.translation) : [];
+            
+            useEffect(() => {
+                if (card) {
+                    setCurrentWordId(card.id);
+                    setAiResult(null); // Reset transient AI result on card change
+                }
+            }, [safeIndex, words]);
+
+            const touchStartX = useRef(0);
+            const touchEndX = useRef(0);
+            const minSwipeDistance = 50;
+            const onTouchStart = (e) => { touchStartX.current = e.targetTouches[0].clientX; };
+            const onTouchMove = (e) => { touchEndX.current = e.targetTouches[0].clientX; };
+            const onTouchEnd = () => {
+                if (!touchStartX.current || !touchEndX.current) return;
+                const distance = touchStartX.current - touchEndX.current;
+                if (distance > minSwipeDistance) setIndex((curr) => (curr + 1) % words.length);
+                else if (distance < -minSwipeDistance) setIndex((curr) => (curr - 1 + words.length) % words.length);
+                touchStartX.current = 0; touchEndX.current = 0;
+            };
+
             useEffect(() => {
                 const handleKeyDown = (e) => {
-                    if (view === 'browse' && activeWords.length > 0 && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
-                        if (e.key === 'ArrowRight') setBrowseIndex((curr) => (curr + 1) % activeWords.length);
-                        else if (e.key === 'ArrowLeft') setBrowseIndex((curr) => (curr - 1 + activeWords.length) % activeWords.length);
+                    if (words.length > 0 && document.activeElement.tagName !== 'TEXTAREA' && document.activeElement.tagName !== 'INPUT') {
+                        if (e.key === 'ArrowRight') setIndex((curr) => (curr + 1) % words.length);
+                        else if (e.key === 'ArrowLeft') setIndex((curr) => (curr - 1 + words.length) % words.length);
                     }
                 };
                 window.addEventListener('keydown', handleKeyDown);
                 return () => window.removeEventListener('keydown', handleKeyDown);
-            }, [view, activeWords.length]);
+            }, [words.length]);
 
-            const speakWord = (text) => { if (!text) return; const u = new SpeechSynthesisUtterance(text.replace(/\[.*?\]/g, '').trim()); u.lang = 'en-US'; window.speechSynthesis.speak(u); };
-            const toggleFavorite = (id) => setWords(prev => prev.map(w => w.id === id ? { ...w, isFavorite: !w.isFavorite } : w));
-            const updateWordStats = (id, isCorrect) => {
-                setWords(prev => prev.map(w => {
-                    if (w.id !== id) return w;
-                    const s = w.stats || { correct: 0, wrong: 0 };
-                    return { ...w, stats: { correct: s.correct + (isCorrect ? 1 : 0), wrong: s.wrong + (isCorrect ? 0 : 1) } };
-                }));
-                setSessionStats(prev => ({ correct: prev.correct + (isCorrect ? 1 : 0), wrong: prev.wrong + (isCorrect ? 0 : 1) }));
-            };
-            const toggleArchive = (id, isArchived) => {
-                setWords(prev => prev.map(w => w.id === id ? { ...w, archived: isArchived } : w));
-                if (isArchived && view === 'browse') {
-                    if (activeWords.length > 1) setBrowseIndex(curr => curr % (activeWords.length - 1));
-                    else setBrowseIndex(0);
+            if (!card) return <div className="h-full flex items-center justify-center text-gray-500 dark:text-gray-400 flex-col"><div className="text-xl mb-2">{t.empty_browse}</div><div className="text-sm">请尝试导入数据</div></div>;
+
+            const speak = () => { if (!card.word) return; const u = new SpeechSynthesisUtterance(card.word); u.lang = 'en-US'; window.speechSynthesis.speak(u); };
+            const updateKeyMeaning = (val) => { onUpdateWord(card.id, { keyMeaning: val }); };
+
+            const handleAiAnalyze = async () => {
+                if (!apiKey) {
+                    showToast(t.ai_no_key, 'error');
+                    onOpenSettings();
+                    return;
+                }
+                setAiLoading(true);
+                try {
+                    const result = await callDeepSeek(apiKey, card.word, card.note);
+                    setAiResult(result);
+                } catch (e) {
+                    showToast(e.message, 'error');
+                } finally {
+                    setAiLoading(false);
                 }
             };
-            const updateKeyMeaning = (id, newMeaning) => {
-                setWords(prev => prev.map(w => w.id === id ? { ...w, keyMeaning: newMeaning } : w));
-            };
 
-            const fetchPhoneticsForMissing = async () => {
-                if (isFetchingPhonetics) return;
-                setIsFetchingPhonetics(true);
-                const wordsToUpdate = words.filter(w => !w.phonetic || w.phonetic.trim() === '');
-                if (wordsToUpdate.length === 0) { alert(t.no_phonetic); setIsFetchingPhonetics(false); return; }
-                if (!confirm(`${t.auto_phonetic}?`)) { setIsFetchingPhonetics(false); return; }
-                let updatedCount = 0;
-                let newWords = [...words];
-                for (let i = 0; i < newWords.length; i++) {
-                    const w = newWords[i];
-                    if (!w.phonetic || w.phonetic.trim() === '') {
-                        try {
-                            const res = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${w.word}`);
-                            if (res.ok) {
-                                const data = await res.json();
-                                let ph = "";
-                                if (data[0]?.phonetic) ph = data[0].phonetic;
-                                else if (data[0]?.phonetics?.length > 0) { const p = data[0].phonetics.find(item => item.text); if (p) ph = p.text; }
-                                if (ph) { newWords[i] = { ...w, phonetic: ph }; updatedCount++; }
-                            }
-                        } catch (e) {}
-                        await new Promise(r => setTimeout(r, 50));
-                    }
-                }
-                setWords(newWords);
-                setIsFetchingPhonetics(false);
-                alert(`Updated ${updatedCount} words.`);
-            };
-
-            const startSpelling = () => {
-                let queue = [...activeWords];
-                if (spellingConfig.scope === 'favorites') queue = queue.filter(w => w.isFavorite);
-                if (spellingConfig.scope === 'unmastered') queue = queue.filter(w => !w.mastered);
-                if (spellingConfig.mode === 'random') queue = queue.sort(() => Math.random() - 0.5);
-                if (spellingConfig.count !== 'all') queue = queue.slice(0, parseInt(spellingConfig.count));
-                if (queue.length === 0) { alert(t.empty_spelling); return; }
-                setSpellingQueue(queue); setSpellingIndex(0); setSpellingInput(''); setSpellingFeedback('idle'); setSessionStats({ correct: 0, wrong: 0 }); setSpellingStep('game'); setTimeout(() => inputRef.current?.focus(), 100);
-            };
-            const handleNextSpelling = () => { if (spellingIndex < spellingQueue.length - 1) { setSpellingIndex(prev => prev + 1); setSpellingInput(''); setSpellingFeedback('idle'); } else { setSpellingStep('result'); } };
-            const checkSpelling = () => {
-                const currentWord = spellingQueue[spellingIndex];
-                const inputClean = spellingInput.trim().toLowerCase();
-                const targetClean = currentWord.word.trim().toLowerCase();
-                if (inputClean === targetClean) { setSpellingFeedback('correct'); speakWord(currentWord.word); updateWordStats(currentWord.id, true); } else { setSpellingFeedback('wrong'); updateWordStats(currentWord.id, false); }
-            };
-            const handleSpellingKeyDown = (e) => {
-                if (e.key === 'Enter') {
-                    e.preventDefault();
-                    if (spellingFeedback === 'idle') checkSpelling();
-                    else if (spellingFeedback === 'correct') handleNextSpelling();
-                    else if (spellingFeedback === 'wrong') { if (spellingConfig.errorMode === 'retry') { setSpellingInput(''); setSpellingFeedback('idle'); } else { handleNextSpelling(); } }
+            const handleSaveAI = () => {
+                if (aiResult) {
+                    onUpdateWord(card.id, { aiAnalysis: aiResult });
+                    setAiResult(null); // Clear transient result to show saved one
+                    showToast(t.ai_saved, 'success');
                 }
             };
-            const archiveFromSpelling = () => { const currentWord = spellingQueue[spellingIndex]; toggleArchive(currentWord.id, true); handleNextSpelling(); };
 
-            // --- 导出功能 ---
-            const handleExport = () => {
-                if (words.length === 0) { alert("没有数据可导出"); return; }
-                const now = new Date();
-                const timeStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}_${String(now.getHours()).padStart(2,'0')}${String(now.getMinutes()).padStart(2,'0')}`;
-                const filename = `单词学习-${timeStr}-${words.length}词.txt`;
-                
-                let content = "";
-                words.forEach(w => {
-                    content += `单词：${w.word}\n`;
-                    if (w.pos) content += `词性：${w.pos}\n`; // Extra field for human reading, not strictly needed for re-import if we have full translation
-                    // Combine pos back into translation for export if needed, or just export raw translation which (hopefully) contains POS
-                    // To be safe and support robust re-import, we export the 'clean' translation but prepended with POS if it was stripped, OR just export the raw full translation if available.
-                    // But wait, we split POS out. Let's reconstruct or just use translation field (which we kept clean).
-                    // Actually, our 'translation' field in state IS the clean one. 'pos' is separate.
-                    // For robust re-import using existing logic:
-                    // The import logic looks for "单词：" and "释义：". 
-                    // Let's reconstruct a full translation string:
-                    const fullTrans = w.pos ? `${w.pos} ${w.translation}` : w.translation;
-                    content += `释义：${fullTrans}\n`;
-                    if (w.phonetic) content += `音标：${w.phonetic}\n`;
-                    if (w.note) content += `笔记：${w.note}\n`;
-                    if (w.source) content += `来源：${w.source}\n`;
-                    if (w.keyMeaning) content += `助记：${w.keyMeaning}\n`;
+            return (
+                <div className="h-full flex items-center justify-center relative px-2 sm:px-4" onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd}>
+                    <button onClick={() => setIndex((curr) => (curr - 1 + words.length) % words.length)} className="hidden md:block absolute left-0 top-1/2 -translate-y-1/2 p-4 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 rounded-full transition z-20"><Icons.ArrowRight className="rotate-180" size={32}/></button>
+                    <button onClick={() => setIndex((curr) => (curr + 1) % words.length)} className="hidden md:block absolute right-0 top-1/2 -translate-y-1/2 p-4 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-slate-700 rounded-full transition z-20"><Icons.ArrowRight size={32}/></button>
                     
-                    // Data JSON
-                    const dataObj = {
-                        mastered: w.mastered,
-                        isFavorite: w.isFavorite,
-                        archived: w.archived,
-                        stats: w.stats
-                    };
-                    content += `数据：${JSON.stringify(dataObj)}\n`;
-                    content += `\n`;
-                });
-
-                const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.href = url;
-                link.download = filename;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            };
-
-            // --- 导入功能 (升级版：支持数据恢复) ---
-            const parseImportData = () => {
-                if (!importText.trim()) return;
-                let newWords = []; const text = importText.trim();
-                
-                // 1. 尝试 Text Block 模式 (包含 "单词：" )
-                if (text.includes('单词：')) {
-                    const blocks = text.split(/单词：/).filter(b => b.trim().length > 0);
-                    newWords = blocks.map((block, index) => {
-                        const lines = block.split('\n');
-                        const word = lines[0].trim(); // First line is word (since we split by "单词：")
-                        
-                        // Helper to extract field by label
-                        const extractField = (label) => {
-                            // Regex: Label：(content) until next Label or End
-                            // Known labels: 释义, 音标, 笔记, 来源, 助记, 数据, 词性
-                            const regex = new RegExp(`${label}：([\\s\\S]*?)(?=\\n(?:释义|音标|笔记|来源|助记|数据|词性|单词)：|$)`);
-                            const match = block.match(regex);
-                            return match ? match[1].trim() : "";
-                        };
-
-                        const translation = extractField('释义');
-                        const phonetic = extractField('音标');
-                        const note = extractField('笔记');
-                        const source = extractField('来源');
-                        const keyMeaning = extractField('助记');
-                        const dataJson = extractField('数据');
-                        
-                        // Parse Data JSON if exists
-                        let meta = { mastered: false, isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 } };
-                        if (dataJson) {
-                            try { meta = { ...meta, ...JSON.parse(dataJson) }; } catch(e) {}
-                        }
-                        
-                        if (!word) return null;
-
-                        // Re-extract POS from translation to ensure consistency
-                        const { pos, cleanTrans } = extractPOS(translation);
-
-                        return { 
-                            id: Date.now() + index + Math.random(), 
-                            word, 
-                            translation: cleanTrans || "暂无", 
-                            phonetic, 
-                            pos, 
-                            note, 
-                            source, 
-                            keyMeaning, 
-                            ...meta 
-                        };
-                    }).filter(w => w !== null);
-                } 
-                // 2. 尝试 Excel 模式 (没有 "单词：" 标签)
-                else {
-                    const rows = parseExcelClipboard(text);
-                    newWords = rows.map((cols, index) => {
-                        if (cols.length < 2) return null;
-                        const word = cols[0]?.trim() || "Unknown";
-                        const rawTrans = cols[1]?.trim() || "";
-                        const phonetic = cols[2]?.trim() || "";
-                        const mastered = (cols[3]?.trim().toLowerCase() === 'yes');
-                        const note = cols[4]?.trim() || "";
-                        const { pos, cleanTrans } = extractPOS(rawTrans);
-                        return { id: Date.now() + index + Math.random(), word, translation: cleanTrans, phonetic, pos, mastered, note, source: "Excel", keyMeaning: "", isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 } };
-                    }).filter(w => w !== null);
-                }
-                
-                if (newWords.length > 0) {
-                    if (confirm(t.import_success(newWords.length))) setWords(newWords); else { const exist = new Set(words.map(w => w.word.toLowerCase())); const unique = newWords.filter(w => !exist.has(w.word.toLowerCase())); setWords([...words, ...unique]); }
-                    setImportText(''); setView('list');
-                } else { alert(t.import_fail); }
-            };
-
-            const handleFileUpload = (e) => { const file = e.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (evt) => setImportText(evt.target.result); reader.readAsText(file); };
-
-            // --- Renderers ---
-            const renderBrowse = () => {
-                if (activeWords.length === 0) return <div className="text-center mt-20 text-gray-500">{t.empty_browse}</div>;
-                const card = activeWords[browseIndex] || activeWords[0];
-                const smartTags = parseTranslationTags(card.translation);
-                const quickPicks = smartTags; // Re-use the parsed tags directly
-
-                return (
-                    <div className="h-full flex items-center justify-center relative px-4">
-                        <button onClick={() => setBrowseIndex((curr) => (curr - 1 + activeWords.length) % activeWords.length)} className="hidden md:block absolute left-0 p-4 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition"><Icons.ArrowRight className="rotate-180" size={32}/></button>
-                        <button onClick={() => setBrowseIndex((curr) => (curr + 1) % activeWords.length)} className="hidden md:block absolute right-0 p-4 text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-full transition"><Icons.ArrowRight size={32}/></button>
-                        <div className="w-full max-w-2xl glass-card rounded-3xl p-8 md:p-12 relative flex flex-col justify-between min-h-[600px]">
-                            <div className="flex justify-between items-start mb-6">
-                                <div className="text-sm font-mono text-gray-400 bg-gray-100 px-3 py-1 rounded-full">{activeWords.indexOf(card) + 1} / {activeWords.length}</div>
-                                <div className="flex space-x-2">
-                                    <button onClick={() => toggleFavorite(card.id)} className={`p-2 rounded-full transition hover:bg-gray-100 ${card.isFavorite ? 'text-yellow-400' : 'text-gray-300'}`}><Icons.Star fill={card.isFavorite ? "currentColor" : "none"} /></button>
-                                    <button onClick={() => speakWord(card.word)} className="p-2 rounded-full text-indigo-500 hover:bg-indigo-50 transition"><Icons.Volume2 /></button>
-                                    <button onClick={() => toggleArchive(card.id, true)} className="p-2 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 transition" title={t.archive_btn}><Icons.Archive /></button>
-                                </div>
+                    <div className="w-full max-w-2xl glass-card rounded-3xl p-6 md:p-12 relative flex flex-col justify-between min-h-[500px] md:min-h-[600px] shadow-xl">
+                        {/* Header Controls */}
+                        <div className="flex justify-between items-start mb-4 md:mb-6">
+                            <div className="flex items-center space-x-2">
+                                <div className="text-xs md:text-sm font-mono text-gray-400 bg-gray-100 dark:bg-slate-700 px-2 md:px-3 py-1 rounded-full">{safeIndex + 1} / {words.length}</div>
+                                <SortMenu sortMode={sortMode} setSortMode={setSortMode} t={t} />
                             </div>
-                            <div className="text-center mb-6">
-                                <h2 className="text-5xl md:text-6xl font-black text-gray-800 mb-2 tracking-tight">{card.word}</h2>
-                                <div className="text-xl text-gray-400 font-mono mb-4 h-6">{card.phonetic || <span className="text-xs bg-gray-100 px-2 py-1 rounded">{t.no_phonetic}</span>}</div>
-                                {card.pos && (
-                                    <div className="flex justify-center flex-wrap gap-2 mb-2">
-                                        {card.pos.split(' ').map((p, i) => (
-                                            <span key={i} className="bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-md text-sm font-bold font-mono">{p}</span>
-                                        ))}
+                            <div className="flex space-x-1 md:space-x-2">
+                                <button onClick={() => onUpdateWord(card.id, { isFavorite: !card.isFavorite })} className={`p-2 rounded-full transition active:scale-90 ${card.isFavorite ? 'text-yellow-400' : 'text-gray-300 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-slate-700'}`}><Icons.Star fill={card.isFavorite ? "currentColor" : "none"} /></button>
+                                <button onClick={speak} className="p-2 rounded-full text-indigo-500 hover:bg-indigo-50 dark:hover:bg-slate-700 active:scale-90 transition"><Icons.Volume2 /></button>
+                                <button onClick={() => { onUpdateWord(card.id, { archived: true }); }} className="p-2 rounded-full text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 active:scale-90 transition"><Icons.Archive /></button>
+                            </div>
+                        </div>
+                        
+                        {/* Main Word */}
+                        <div className="text-center mb-4 md:mb-6 flex-shrink-0">
+                            <h2 className="text-4xl md:text-6xl font-black text-gray-800 dark:text-gray-100 mb-2 tracking-tight break-words">
+                                {syllableMode ? syllabify(card.word) : card.word}
+                            </h2>
+                            <div className="flex items-center justify-center space-x-2 mb-2 h-6">
+                                <div className="text-base md:text-xl text-gray-400 font-phonetic">{card.phonetic || <span className="text-xs bg-gray-100 dark:bg-slate-700 px-2 py-1 rounded font-sans">{t.no_phonetic}</span>}</div>
+                                <button onClick={onShowPhoneticTable} className="text-indigo-400 hover:text-indigo-600 transition" title={t.phonetic_help}><Icons.HelpCircle size={16} /></button>
+                            </div>
+                        </div>
+                        
+                        {/* Key Meaning */}
+                        <div className="bg-white/60 dark:bg-slate-800/60 rounded-xl p-3 md:p-4 border border-indigo-100 dark:border-slate-600 shadow-sm mb-3 md:mb-4 flex-shrink-0">
+                            <div className="flex items-center justify-between mb-2"><div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 uppercase flex items-center"><Icons.PenTool size={12} className="mr-1"/> {t.key_meaning}</div></div>
+                            <textarea className="w-full bg-transparent border-b border-dashed border-gray-300 dark:border-slate-500 focus:border-indigo-500 focus:outline-none text-base md:text-lg font-bold text-gray-800 dark:text-gray-100 placeholder-gray-300 py-1" rows="1" placeholder={t.key_meaning_ph} value={card.keyMeaning || ""} onChange={(e) => updateKeyMeaning(e.target.value)}></textarea>
+                            <div className="mt-2 md:mt-3 flex flex-wrap gap-2">
+                                <span className="text-xs text-gray-400 mr-1 self-center">{t.quick_pick}</span>
+                                {smartTags.map((tag, idx) => {
+                                    const parts = (card.keyMeaning || "").split(/[,;，；]/).map(s => s.trim());
+                                    const isActive = parts.includes(tag);
+                                    return <button key={idx} onClick={() => {
+                                        let newParts = isActive ? parts.filter(p => p !== tag) : [...parts.filter(Boolean), tag];
+                                        updateKeyMeaning(newParts.join("；"));
+                                    }} className={`text-[10px] md:text-xs px-2 py-1 rounded border transition active:scale-95 flex items-center ${isActive ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white dark:bg-slate-700 border-indigo-100 dark:border-slate-600 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-600'}`}>{tag} {isActive && "×"}</button>;
+                                })}
+                            </div>
+                        </div>
+                        
+                        <div className="w-full h-px bg-gray-100 dark:bg-slate-700 mb-3 md:mb-4"></div>
+                        
+                        {/* Scrollable Content */}
+                        <div className="flex-1 overflow-y-auto max-h-48 md:max-h-full scrollbar-hide relative pb-10">
+                            <div className="mb-4">
+                                <h3 className="text-base md:text-lg text-gray-500 dark:text-gray-300 font-medium px-1 whitespace-pre-wrap leading-relaxed">{card.translation}</h3>
+                            </div>
+                            
+                            {/* User Note Section */}
+                            <div className="bg-indigo-50/50 dark:bg-indigo-900/30 rounded-xl p-3 border border-indigo-100/50 dark:border-indigo-800/30 relative group mb-4">
+                                <div className="flex justify-between items-center mb-1">
+                                    <div className="text-xs font-bold text-indigo-400 uppercase flex items-center"><Icons.FileText size={12} className="mr-1"/> {t.note}</div>
+                                </div>
+                                <div className="text-gray-700 dark:text-gray-300 text-xs md:text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: card.note}}></div>
+                                {card.source && <div className="flex items-center justify-end text-xs text-gray-400 mt-1"><Icons.Link size={10} className="mr-1"/> <span className="truncate max-w-xs">{card.source}</span></div>}
+                            </div>
+
+                            {/* AI Analysis Section */}
+                            <div className="relative">
+                                <div className="flex justify-between items-center mb-2">
+                                    <span className="text-xs font-bold text-purple-600 dark:text-purple-400 uppercase flex items-center">
+                                        <Icons.Sparkles size={12} className="mr-1"/> {t.ai_analysis_title}
+                                    </span>
+                                    <button onClick={handleAiAnalyze} disabled={aiLoading} className="text-xs bg-white dark:bg-slate-700 border border-indigo-200 dark:border-slate-500 text-indigo-600 dark:text-indigo-300 px-2 py-1 rounded-full flex items-center shadow-sm hover:bg-indigo-50 dark:hover:bg-slate-600 transition disabled:opacity-50">
+                                        {aiLoading ? <span className="animate-spin mr-1">⏳</span> : <Icons.Wand2 size={12} className="mr-1"/>}
+                                        {aiLoading ? t.ai_analyzing : (card.aiAnalysis || aiResult ? "Re-Analyze" : t.ai_analyze)}
+                                    </button>
+                                </div>
+                                
+                                {/* Transient AI Result (Preview) */}
+                                {aiResult && (
+                                    <div className="bg-purple-50/80 dark:bg-slate-800 rounded-xl p-3 border-2 border-purple-200 dark:border-purple-800 mb-4 animate-slide-down">
+                                        <div className="flex justify-between items-center mb-3 pb-2 border-b border-purple-100 dark:border-slate-700">
+                                            <span className="text-xs font-bold text-purple-600 dark:text-purple-400">⚡ Preview</span>
+                                            <button onClick={handleSaveAI} className="text-xs bg-purple-600 text-white px-3 py-1 rounded-lg font-bold shadow hover:bg-purple-700 transition flex items-center">
+                                                <Icons.Check size={12} className="mr-1" /> {t.ai_save}
+                                            </button>
+                                        </div>
+                                        <AIAnalysisCard data={aiResult} word={card.word} t={t} />
+                                    </div>
+                                )}
+
+                                {/* Saved AI Analysis */}
+                                {card.aiAnalysis && !aiResult && (
+                                    <div className="animate-slide-down">
+                                        <AIAnalysisCard data={card.aiAnalysis} word={card.word} t={t} />
                                     </div>
                                 )}
                             </div>
-                            <div className="bg-white/60 rounded-xl p-4 border border-indigo-100 shadow-sm mb-4">
-                                <div className="flex items-center justify-between mb-2">
-                                    <div className="text-xs font-bold text-indigo-600 uppercase flex items-center"><Icons.PenTool size={12} className="mr-1"/> {t.key_meaning}</div>
-                                </div>
-                                <textarea className="w-full bg-transparent border-b border-dashed border-gray-300 focus:border-indigo-500 focus:outline-none text-lg font-bold text-gray-800 placeholder-gray-300 py-1" rows="1" placeholder={t.key_meaning_ph} value={card.keyMeaning || ""} onChange={(e) => updateKeyMeaning(card.id, e.target.value)}></textarea>
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                    <span className="text-xs text-gray-400 mr-1 self-center">{t.quick_pick}</span>
-                                    {smartTags.map((tag, idx) => {
-                                        const fullTagText = tag; 
-                                        const currentVal = card.keyMeaning || "";
-                                        const parts = currentVal.split(/[,;，；]/).map(s => s.trim());
-                                        const isActive = parts.includes(fullTagText);
-                                        return (
-                                            <button key={idx} onClick={() => { let newParts; if (isActive) { newParts = parts.filter(p => p !== fullTagText); } else { newParts = [...parts.filter(Boolean), fullTagText]; } updateKeyMeaning(card.id, newParts.join("；")); }} className={`text-xs px-2 py-1 rounded border transition active:scale-95 flex items-center ${isActive ? 'bg-indigo-600 border-indigo-600 text-white shadow-md' : 'bg-white border-indigo-100 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-300'}`} >
-                                                {tag} {isActive && <span className="ml-1 opacity-50">×</span>}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                            <div className="w-full h-px bg-gray-100 mb-4"></div>
-                            <h3 className="text-lg text-gray-500 font-medium mb-4 px-2 whitespace-pre-wrap leading-relaxed">{card.translation}</h3>
-                            <div className="space-y-2 text-left">
-                                {card.note && (<div className="bg-indigo-50/50 rounded-xl p-3 border border-indigo-100/50"><div className="text-xs font-bold text-indigo-400 uppercase mb-1 flex items-center"><Icons.FileText size={12} className="mr-1"/> {t.note}</div><div className="text-gray-700 text-sm leading-relaxed whitespace-pre-wrap" dangerouslySetInnerHTML={{__html: card.note}}></div></div>)}
-                                {card.source && (<div className="flex items-center justify-end text-xs text-gray-400 mt-1"><Icons.Link size={10} className="mr-1"/> <span className="truncate max-w-xs" title={card.source}>{t.source}: {card.source}</span></div>)}
-                            </div>
                         </div>
                     </div>
-                );
-            };
 
-            const renderSpellingComp = () => {
-                 if (spellingStep === 'setup') return renderSpelling();
-                 if (spellingStep === 'result') return renderSpelling();
-                 const card = spellingQueue[spellingIndex];
-                 const isCorrect = spellingFeedback === 'correct';
-                 const isWrong = spellingFeedback === 'wrong';
-                 return (
-                    <div className="max-w-xl mx-auto">
-                        <div className="flex justify-between items-center mb-6 px-4">
-                            <button onClick={() => setSpellingStep('setup')} className="text-gray-500 hover:text-gray-800 text-sm font-medium">Exit</button>
-                            <div className="flex items-center space-x-4">
-                                <button onClick={archiveFromSpelling} className="text-gray-400 hover:text-red-500 flex items-center text-xs bg-white/50 px-2 py-1 rounded border border-gray-200"><Icons.Archive size={14} className="mr-1"/>{t.archive_btn}</button>
-                                <div className="flex space-x-3 text-sm font-mono"><span className="text-green-600 font-bold">✓ {sessionStats.correct}</span><span className="text-red-500 font-bold">✕ {sessionStats.wrong}</span></div>
-                            </div>
-                        </div>
-                        <div className="p-8 md:p-10 relative overflow-hidden glass-card rounded-3xl">
-                            <div className="absolute top-0 left-0 h-1.5 bg-indigo-100 w-full"><div className="h-full bg-indigo-500 transition-all duration-500" style={{width: `${((spellingIndex)/spellingQueue.length)*100}%`}}></div></div>
-                            <div className="mb-8 text-center space-y-4 min-h-[100px]">
-                                <div className="text-gray-400 text-xs uppercase tracking-widest font-bold">{t.translate_this}</div>
-                                <h3 className="text-3xl text-gray-800 font-bold leading-relaxed flex flex-col items-center">
-                                    {card.keyMeaning ? <span className="text-indigo-900">{card.keyMeaning}</span> : card.translation.split('\n')[0]}
-                                    {!card.keyMeaning && extractPOSForList(card.translation) && <span className="mt-1 text-xs bg-indigo-50 text-indigo-400 px-2 py-0.5 rounded font-mono">{extractPOSForList(card.translation)}</span>}
-                                </h3>
-                                {card.keyMeaning && <div className="text-sm text-gray-400 line-clamp-1">{card.translation.split('\n')[0]}</div>}
-                                <div className={`transition-all duration-300 overflow-hidden ${spellingConfig.hint === 'copy' || isCorrect || isWrong ? 'opacity-100 max-h-24' : 'opacity-0 max-h-0'}`}>
-                                    <div className="text-5xl font-black text-indigo-600 tracking-wider font-mono mt-4">{card.word}</div>
-                                </div>
-                                <div className="text-xs text-gray-400 mt-2 italic line-clamp-2">
-                                    {card.note && <span dangerouslySetInnerHTML={{__html: card.note.replace(/<b>.*?<\/b>/g, '___').substring(0, 100) + '...'}}></span>}
-                                </div>
-                            </div>
-                            <div className="relative mb-6">
-                                <input ref={inputRef} type="text" value={spellingInput} onChange={(e) => setSpellingInput(e.target.value)} onKeyDown={handleSpellingKeyDown} readOnly={isCorrect} placeholder={t.type_ph} className={`w-full bg-gray-50/50 border-2 text-center text-4xl font-black py-6 rounded-2xl focus:outline-none transition-all ${isCorrect ? 'border-green-500 text-green-600 bg-green-50/30 ring-2 ring-green-200' : ''} ${isWrong ? 'border-red-500 text-red-500 bg-red-50/30 animate-pulse' : 'border-gray-200 focus:border-indigo-500 text-gray-800'}`} autoComplete="off" spellCheck="false" />
-                                <div className="absolute right-4 top-1/2 transform -translate-y-1/2 text-gray-400 pointer-events-none opacity-50"><Icons.Keyboard size={24} /></div>
-                            </div>
-                            <div className="text-center h-8">
-                                {isCorrect && <div className="text-green-600 font-bold text-sm animate-bounce">{t.press_enter_next}</div>}
-                                {isWrong && spellingConfig.errorMode === 'retry' && <div className="text-red-500 text-sm font-bold">{t.try_again}</div>}
-                                {spellingFeedback === 'idle' && <div className="text-gray-400 text-xs">{t.press_enter_check}</div>}
-                            </div>
-                        </div>
-                    </div>
-                 );
-            };
-
-            const renderSpelling = () => {
-                if (spellingStep === 'setup') {
-                    return (
-                        <div className="max-w-lg mx-auto p-8 glass-card rounded-3xl">
-                            <h2 className="text-2xl font-bold text-gray-800 mb-6 flex items-center"><Icons.Edit3 className="mr-2 text-indigo-500" /> {t.spelling_setup}</h2>
-                            <div className="space-y-6">
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-600 mb-2">{t.mode}</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => setSpellingConfig({...spellingConfig, mode: 'random'})} className={`p-3 rounded-xl border text-left ${spellingConfig.mode === 'random' ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200'}`}><div className="font-bold text-indigo-900">{t.mode_random}</div></button>
-                                        <button onClick={() => setSpellingConfig({...spellingConfig, mode: 'sequential'})} className={`p-3 rounded-xl border text-left ${spellingConfig.mode === 'sequential' ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200'}`}><div className="font-bold text-indigo-900">{t.mode_seq}</div></button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-600 mb-2">{t.scope}</label>
-                                    <div className="grid grid-cols-3 gap-2">
-                                        {['all', 'favorites', 'unmastered'].map(scope => (
-                                            <button key={scope} onClick={() => setSpellingConfig({...spellingConfig, scope})} className={`py-2 px-1 rounded-lg text-sm border ${spellingConfig.scope === scope ? 'bg-indigo-50 border-indigo-500 text-indigo-700 font-bold' : 'border-gray-200 text-gray-500'}`}>{scope === 'all' ? t.scope_all : scope === 'favorites' ? t.scope_fav : t.scope_new}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-600 mb-2">{t.hint}</label>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <button onClick={() => setSpellingConfig({...spellingConfig, hint: 'copy'})} className={`p-3 rounded-xl border text-left ${spellingConfig.hint === 'copy' ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200'}`}><div className="font-bold text-indigo-900">{t.hint_copy}</div></button>
-                                        <button onClick={() => setSpellingConfig({...spellingConfig, hint: 'none'})} className={`p-3 rounded-xl border text-left ${spellingConfig.hint === 'none' ? 'bg-indigo-50 border-indigo-500 ring-1 ring-indigo-500' : 'border-gray-200'}`}><div className="font-bold text-indigo-900">{t.hint_blind}</div></button>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-sm font-bold text-gray-600 mb-2">{t.count}</label>
-                                    <div className="flex items-center space-x-4">
-                                        {[5, 10, 20, 'all'].map(n => (
-                                            <button key={n} onClick={() => setSpellingConfig({...spellingConfig, count: n})} className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm transition ${spellingConfig.count === n ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-300' : 'bg-white border border-gray-200 text-gray-500'}`}>{n === 'all' ? t.count_all : n}</button>
-                                        ))}
-                                    </div>
-                                </div>
-                                <button onClick={startSpelling} className="w-full py-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-xl shadow-indigo-200 transition transform active:scale-95">{t.start}</button>
-                            </div>
-                        </div>
-                    );
-                }
-                if (spellingStep === 'result') {
-                    return (
-                        <div className="max-w-md mx-auto p-10 text-center glass-card rounded-3xl">
-                            <div className="w-24 h-24 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-6"><Icons.Check size={48} strokeWidth={3} /></div>
-                            <h2 className="text-3xl font-bold text-gray-800 mb-2">{t.result}</h2>
-                            <div className="grid grid-cols-2 gap-6 mb-8 mt-8">
-                                <div className="bg-green-50 p-4 rounded-2xl border border-green-100"><div className="text-4xl font-bold text-green-600">{sessionStats.correct}</div><div className="text-xs font-bold text-green-800/50 uppercase mt-1">{t.correct}</div></div>
-                                <div className="bg-red-50 p-4 rounded-2xl border border-red-100"><div className="text-4xl font-bold text-red-500">{sessionStats.wrong}</div><div className="text-xs font-bold text-red-800/50 uppercase mt-1">{t.wrong}</div></div>
-                            </div>
-                            <button onClick={() => setSpellingStep('setup')} className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition">{t.back_setup}</button>
-                        </div>
-                    );
-                }
-                return null;
-            };
-
-            const renderList = () => {
-                const displayWords = listTab === 'active' ? activeWords : archivedWords;
-                return (
-                    <div className="overflow-hidden flex flex-col max-h-[80vh] glass-card rounded-3xl">
-                        <div className="p-4 border-b border-gray-200/50 bg-white/40 flex justify-between items-center">
-                            <div className="flex space-x-4">
-                                <button onClick={() => setListTab('active')} className={`text-sm font-bold pb-1 border-b-2 transition ${listTab === 'active' ? 'text-indigo-600 border-indigo-600' : 'text-gray-400 border-transparent'}`}>{t.active} ({activeWords.length})</button>
-                                <button onClick={() => setListTab('archived')} className={`text-sm font-bold pb-1 border-b-2 transition ${listTab === 'archived' ? 'text-indigo-600 border-indigo-600' : 'text-gray-400 border-transparent'}`}>{t.archived} ({archivedWords.length})</button>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                                <button onClick={handleExport} className="text-xs flex items-center px-3 py-1.5 bg-green-50 text-green-600 rounded-lg hover:bg-green-100 transition font-bold border border-green-100 mr-2">
-                                    <Icons.Download className="mr-1" size={12}/>{t.export_btn}
-                                </button>
-                                <button onClick={fetchPhoneticsForMissing} disabled={isFetchingPhonetics} className="text-xs flex items-center px-3 py-1.5 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition disabled:opacity-50">
-                                    {isFetchingPhonetics ? <Icons.RefreshCw className="animate-spin mr-1" size={12}/> : <Icons.Wand2 className="mr-1" size={12}/>}
-                                    {isFetchingPhonetics ? t.fetching : t.auto_phonetic}
-                                </button>
-                                <button onClick={() => {if(confirm(t.clear_confirm)) setWords([])}} className="text-xs text-red-400 hover:text-red-600 flex items-center"><Icons.Trash2 size={12} className="mr-1"/>{t.clear_all}</button>
-                            </div>
-                        </div>
-                        <div className="overflow-y-auto flex-1">
-                            <table className="w-full text-left border-collapse">
-                                <thead className="sticky top-0 bg-white/90 backdrop-blur-sm z-10 text-gray-500 text-xs uppercase tracking-wider">
-                                    <tr><th className="p-4">Word</th><th className="p-4">Meaning</th><th className="p-4 text-right">Action</th></tr>
-                                </thead>
-                                <tbody className="divide-y divide-gray-100/50 text-sm text-gray-700">
-                                    {displayWords.map(word => (
-                                        <tr key={word.id} className="hover:bg-indigo-50/30 transition">
-                                            <td className="p-4">
-                                                <div className="font-bold">{word.word}</div>
-                                                <div className="flex items-center mt-1">
-                                                    {word.pos && <span className="text-xs bg-indigo-50 text-indigo-500 px-1.5 py-0.5 rounded mr-2 font-mono">{word.pos}</span>}
-                                                    <span className="text-xs text-gray-400 font-mono">{word.phonetic || "-"}</span>
-                                                </div>
-                                            </td>
-                                            <td className="p-4 text-gray-600 max-w-xs truncate" title={word.translation}>
-                                                {word.keyMeaning ? <span className="text-indigo-900 font-medium mr-2">{word.keyMeaning}</span> : null}
-                                                <span className="text-gray-500">{word.translation}</span>
-                                            </td>
-                                            <td className="p-4 text-right flex justify-end space-x-2">
-                                                <button onClick={() => toggleArchive(word.id, !word.archived)} className={`text-xs px-2 py-1 rounded border ${word.archived ? 'border-green-200 text-green-600 hover:bg-green-50' : 'border-gray-200 text-gray-400 hover:text-red-500 hover:bg-red-50'}`}>
-                                                    {word.archived ? t.unarchive_btn : t.archive_btn}
-                                                </button>
-                                                <button onClick={() => setWords(words.filter(w => w.id !== word.id))} className="text-gray-300 hover:text-red-500"><Icons.Trash2 size={16} /></button>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                );
-            };
-
-            const renderImport = () => (
-                <div className="p-8 max-w-2xl mx-auto glass-card rounded-3xl">
-                    <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center"><Icons.Upload className="mr-2 text-indigo-500" /> {t.import_title}</h3>
-                    <div className="space-y-6">
-                        <div className="border-2 border-dashed border-indigo-200 bg-indigo-50/30 rounded-2xl p-8 text-center relative hover:bg-indigo-50/60 transition">
-                            <input type="file" accept=".csv,.txt" onChange={handleFileUpload} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" />
-                            <div className="w-16 h-16 bg-indigo-100 text-indigo-500 rounded-full flex items-center justify-center mx-auto mb-4"><Icons.FileText size={32} /></div>
-                            <h4 className="font-bold text-indigo-900 mb-1">{t.import_click}</h4>
-                            <p className="text-xs text-gray-400">{t.import_desc}</p>
-                        </div>
-                        <textarea value={importText} onChange={(e) => setImportText(e.target.value)} placeholder={t.import_ph} className="w-full h-32 p-4 border border-gray-200 rounded-xl bg-white/50 focus:ring-2 focus:ring-indigo-500 font-mono text-xs"></textarea>
-                        <button onClick={parseImportData} disabled={!importText} className="w-full py-3 bg-indigo-600 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition disabled:opacity-50">{t.import_btn}</button>
+                    <div className="absolute bottom-6 right-6 md:right-12 z-20">
+                         <button 
+                            onClick={onToggleSyllableMode}
+                            className={`p-3 rounded-full shadow-lg transition-all active:scale-90 flex items-center justify-center border dark:border-slate-600 ${syllableMode ? 'bg-indigo-600 text-white border-indigo-600' : 'bg-white dark:bg-slate-700 text-gray-400 dark:text-gray-400'}`}
+                            title={t.syllable_mode}
+                        >
+                            <Icons.Split size={20} />
+                        </button>
                     </div>
                 </div>
             );
+        };
+
+        const SpellingView = ({ words, onUpdateWord, t }) => { const [step, setStep] = useState('setup'); const [queue, setQueue] = useState([]); const [idx, setIdx] = useState(0); const [input, setInput] = useState(''); const [feedback, setFeedback] = useState('idle'); const [stats, setStats] = useState({ correct: 0, wrong: 0 }); const [config, setConfig] = useState({ mode: 'random', count: 5, hint: 'copy', errorMode: 'retry', scope: 'all' }); const [showHintTemp, setShowHintTemp] = useState(false); const inputRef = useRef(null); useEffect(() => { if (step === 'game' && inputRef.current) inputRef.current.focus(); }, [step, idx, feedback]); const start = () => { let q = [...words]; if (config.scope === 'favorites') q = q.filter(w => w.isFavorite); if (config.scope === 'unmastered') q = q.filter(w => !w.mastered); if (config.mode === 'random') q = q.sort(() => Math.random() - 0.5); if (config.count !== 'all') q = q.slice(0, parseInt(config.count)); if (q.length === 0) { alert(t.empty_spelling); return; } setQueue(q); setIdx(0); setInput(''); setFeedback('idle'); setStats({ correct: 0, wrong: 0 }); setStep('game'); }; const speak = (text) => { const u = new SpeechSynthesisUtterance(text); u.lang = 'en-US'; window.speechSynthesis.speak(u); }; const check = () => { const card = queue[idx]; if (input.trim().toLowerCase() === card.word.trim().toLowerCase()) { setFeedback('correct'); speak(card.word); setStats(s => ({ ...s, correct: s.correct + 1 })); onUpdateWord(card.id, { stats: { correct: (card.stats?.correct||0)+1, wrong: card.stats?.wrong||0 } }); } else { setFeedback('wrong'); setStats(s => ({ ...s, wrong: s.wrong + 1 })); onUpdateWord(card.id, { stats: { correct: card.stats?.correct||0, wrong: (card.stats?.wrong||0)+1 } }); } }; const next = () => { if (idx < queue.length - 1) { setIdx(i => i + 1); setInput(''); setFeedback('idle'); } else setStep('result'); }; const handleKey = (e) => { if (e.key === 'Enter') { e.preventDefault(); if (feedback === 'idle') check(); else if (feedback === 'correct') next(); else if (feedback === 'wrong') { config.errorMode === 'retry' ? (setInput(''), setFeedback('idle')) : next(); } } }; const OptionGroup = ({ title, children }) => ( <div className="mb-4"> <div className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase mb-2 tracking-wider">{title}</div> <div className="grid grid-cols-2 gap-2">{children}</div> </div> ); const OptionCard = ({ active, onClick, title, desc, icon }) => ( <button onClick={onClick} className={`p-3 rounded-xl border-2 text-left transition-all ${active ? 'border-indigo-600 bg-indigo-50 dark:bg-indigo-900/30 dark:border-indigo-400' : 'border-gray-100 dark:border-slate-700 bg-white dark:bg-slate-800 hover:border-indigo-200 dark:hover:border-slate-600'}`}> <div className={`text-sm font-bold mb-1 ${active ? 'text-indigo-700 dark:text-indigo-300' : 'text-gray-700 dark:text-gray-300'}`}>{title}</div> {desc && <div className="text-[10px] text-gray-400">{desc}</div>} </button> ); if (step === 'setup') return ( <div className="max-w-xl mx-auto p-6 md:p-8 glass-card rounded-3xl"> <h2 className="text-2xl font-black text-gray-800 dark:text-gray-100 mb-6 flex items-center"><Icons.Edit3 className="mr-2 text-indigo-500" size={24} /> {t.spelling_setup}</h2> <OptionGroup title={t.spelling_mode}> <OptionCard active={config.mode === 'random'} onClick={() => setConfig({...config, mode: 'random'})} title={t.mode_random} desc="Random order" /> <OptionCard active={config.mode === 'seq'} onClick={() => setConfig({...config, mode: 'seq'})} title={t.mode_seq} desc="Sequential order" /> </OptionGroup> <OptionGroup title={t.spelling_hint}> <OptionCard active={config.hint === 'copy'} onClick={() => setConfig({...config, hint: 'copy'})} title={t.hint_copy} desc="Show word" /> <OptionCard active={config.hint === 'blind'} onClick={() => setConfig({...config, hint: 'blind'})} title={t.hint_blind} desc="Hide word" /> </OptionGroup> <OptionGroup title={t.spelling_count}> <OptionCard active={config.count === 5} onClick={() => setConfig({...config, count: 5})} title="5 Words" /> <OptionCard active={config.count === 'all'} onClick={() => setConfig({...config, count: 'all'})} title={t.count_all} /> </OptionGroup> <button onClick={start} className="w-full mt-4 py-4 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white font-bold rounded-xl shadow-lg transform active:scale-95 transition-all text-lg flex items-center justify-center"> <Icons.Game className="mr-2" /> {t.start} </button> </div> ); if (step === 'result') return ( <div className="max-w-md mx-auto p-8 text-center glass-card rounded-3xl animate-pop"> <h2 className="text-3xl font-black text-gray-800 dark:text-gray-100 mb-8">{t.result}</h2> <div className="grid grid-cols-2 gap-6 mb-8"> <div className="bg-green-100 dark:bg-green-900/30 p-6 rounded-2xl border border-green-200 dark:border-green-800"><div className="text-4xl text-green-600 font-black mb-1">{stats.correct}</div><div className="text-xs font-bold text-green-600 uppercase tracking-widest">{t.correct}</div></div> <div className="bg-red-100 dark:bg-red-900/30 p-6 rounded-2xl border border-red-200 dark:border-red-800"><div className="text-4xl text-red-500 font-black mb-1">{stats.wrong}</div><div className="text-xs font-bold text-red-500 uppercase tracking-widest">{t.wrong}</div></div> </div> <button onClick={() => setStep('setup')} className="w-full py-3 bg-gray-100 dark:bg-slate-700 font-bold rounded-xl text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-slate-600">{t.back_setup}</button> </div> ); const card = queue[idx]; const isCorrect = feedback === 'correct'; const isWrong = feedback === 'wrong'; return ( <div className="max-w-xl mx-auto p-6 md:p-10 glass-card rounded-3xl relative overflow-hidden flex flex-col min-h-[500px]"> <div className="absolute top-0 left-0 h-1.5 bg-gray-100 dark:bg-slate-700 w-full"><div className="h-full bg-indigo-500 transition-all duration-300" style={{width: `${(idx/queue.length)*100}%`}}></div></div> <div className="flex-1 flex flex-col items-center justify-center mb-8 text-center"> <div className="text-gray-400 text-xs uppercase tracking-widest font-bold mb-6">{t.translate_this}</div> <h3 className="text-3xl md:text-4xl text-gray-800 dark:text-gray-100 font-black leading-tight flex flex-col items-center mb-8"> {card.keyMeaning ? <span className="text-indigo-900 dark:text-indigo-300">{card.keyMeaning}</span> : card.translation.split('\n')[0]} </h3> <div className={`transition-all duration-300 overflow-hidden ${config.hint === 'copy' || isCorrect || isWrong || showHintTemp ? 'opacity-100 scale-100' : 'opacity-0 scale-95 blur-sm'}`}> <div className={`text-5xl font-black tracking-wider font-mono mt-2 ${isCorrect ? 'text-green-500' : isWrong ? 'text-red-500' : 'text-indigo-600 dark:text-indigo-400'}`}>{card.word}</div> </div> </div> <div className="relative w-full"> <input ref={inputRef} type="text" value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={handleKey} readOnly={isCorrect} className={`w-full bg-white dark:bg-slate-800 border-2 text-center text-3xl font-bold py-5 rounded-2xl focus:outline-none transition-all shadow-sm ${isCorrect ? 'border-green-500 text-green-600 bg-green-50 dark:bg-green-900/20 ring-4 ring-green-100 dark:ring-green-900/30' : isWrong ? 'border-red-500 text-red-500 bg-red-50 dark:bg-red-900/20 animate-shake' : 'border-gray-200 dark:border-slate-600 text-gray-800 dark:text-gray-100 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-100 dark:focus:ring-indigo-900/30'}`} autoComplete="off" spellCheck="false" placeholder={t.type_ph} /> {config.hint === 'blind' && !isCorrect && !isWrong && ( <button onMouseDown={() => setShowHintTemp(true)} onMouseUp={() => setShowHintTemp(false)} onTouchStart={() => setShowHintTemp(true)} onTouchEnd={() => setShowHintTemp(false)} className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-300 hover:text-indigo-500 p-2" title={t.peek} > <Icons.Eye size={20} /> </button> )} </div> <div className="text-center mt-6 h-8 text-sm font-bold text-gray-400 dark:text-gray-500"> {isCorrect ? <span className="text-green-600 dark:text-green-400 animate-pulse">{t.press_enter_next}</span> : isWrong ? <span className="text-red-500">{t.try_again}</span> : t.press_enter_check} </div> </div> ); };
+        const ListView = ({ words, onUpdateWord, onDeleteWord, onClearAll, onFetchPhonetics, onExport, onJump, t }) => { const [tab, setTab] = useState('active'); const activeCount = words.filter(w => !w.archived).length; const archivedCount = words.filter(w => w.archived).length; const displayWords = words.filter(w => tab === 'active' ? !w.archived : w.archived).sort((a,b) => (b.isFavorite?1:0) - (a.isFavorite?1:0)); return ( <div className="glass-card rounded-3xl overflow-hidden flex flex-col max-h-[80vh]"> <div className="p-3 md:p-4 border-b border-gray-200/50 dark:border-slate-700/50 bg-white/40 dark:bg-slate-800/40 flex justify-between items-center"> <div className="flex space-x-4"> <button onClick={() => setTab('active')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${tab === 'active' ? 'text-indigo-600 dark:text-indigo-400 border-indigo-600 dark:border-indigo-400' : 'text-gray-400 border-transparent'}`}> {t.active} <span className="ml-1 text-xs bg-indigo-100 dark:bg-indigo-900/50 text-indigo-600 dark:text-indigo-300 px-1.5 py-0.5 rounded-full">{activeCount}</span> </button> <button onClick={() => setTab('archived')} className={`text-sm font-bold pb-2 border-b-2 transition-colors ${tab === 'archived' ? 'text-indigo-600 dark:text-indigo-400 border-indigo-600 dark:border-indigo-400' : 'text-gray-400 border-transparent'}`}> {t.archived} <span className="ml-1 text-xs bg-gray-100 dark:bg-slate-700 text-gray-500 dark:text-gray-400 px-1.5 py-0.5 rounded-full">{archivedCount}</span> </button> </div> <div className="flex items-center space-x-1"> <button onClick={onExport} className="text-xs flex items-center px-2 py-1 bg-green-50 text-green-600 rounded border border-green-100 dark:bg-green-900/30 dark:text-green-400 dark:border-transparent"><Icons.Download size={12}/></button> <button onClick={onFetchPhonetics} className="text-xs flex items-center px-2 py-1 bg-indigo-50 text-indigo-600 rounded dark:bg-indigo-900/30 dark:text-indigo-400"><Icons.Wand2 size={12}/></button> <button onClick={onClearAll} className="text-xs text-red-400 hover:text-red-600 p-1"><Icons.Trash2 size={12}/></button> </div> </div> <div className="overflow-y-auto flex-1"> <table className="w-full text-left text-sm"> <tbody className="divide-y divide-gray-100/50 dark:divide-slate-700/50"> {displayWords.map(w => ( <tr key={w.id} onClick={(e) => { if(!e.target.closest('button')) onJump(w.id); }} className="hover:bg-indigo-50/30 dark:hover:bg-indigo-500/10 cursor-pointer transition active:bg-indigo-100 dark:active:bg-slate-700"> <td className="p-3 md:p-4 w-1/3"> <div className="font-bold flex items-center text-gray-800 dark:text-gray-200 text-sm md:text-base">{w.isFavorite && <span className="text-yellow-400 mr-1">★</span>}{w.word}</div> <div className="flex items-center mt-1 text-xs text-gray-400 font-phonetic">{w.phonetic}</div> </td> <td className="p-3 md:p-4 text-gray-600 dark:text-gray-400 max-w-xs truncate text-xs md:text-sm"> {w.keyMeaning ? <span className="text-indigo-600 dark:text-indigo-400 font-bold mr-1 bg-indigo-50 dark:bg-indigo-900/30 px-1 rounded">{w.keyMeaning}</span> : w.translation} </td> <td className="p-3 md:p-4 text-right space-x-2 w-20"> <button onClick={() => onDeleteWord(w.id)} className="text-gray-300 hover:text-red-500 p-1"><Icons.Trash2 size={16}/></button> </td> </tr> ))} </tbody> </table> </div> </div> ); };
+        
+        const ImportView = ({ onImport, t, existingWords }) => { 
+            const [text, setText] = useState(''); 
+            const [previewWords, setPreviewWords] = useState([]); 
+            const [excludeExisting, setExcludeExisting] = useState(true);
+
+            const handleFile = (e) => { const file = e.target.files[0]; if (!file) return; e.target.value = ''; const reader = new FileReader(); reader.onload = (evt) => setText(evt.target.result); reader.readAsText(file); }; 
+            
+            const handleAnalyze = () => { 
+                if (!text.trim()) return; 
+                let newWords = []; 
+                if (text.includes('单词：')) { 
+                    const blocks = text.split(/(?=单词：)/).filter(b => b.trim().length > 0); 
+                    newWords = blocks.map((block, i) => { const getVal = (key) => { const r = new RegExp(`${key}：([\\s\\S]*?)(?=\\n(?:单词|释义|音标|笔记|来源|助记|数据|词性)：|$)`); const m = block.match(r); return m ? m[1].trim() : ""; }; const w = getVal('单词'); if (!w) return null; const { pos, cleanTrans } = extractPOS(getVal('释义')); let meta = { mastered: false, isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 } }; const dj = getVal('数据'); if (dj) { try { meta = { ...meta, ...JSON.parse(dj) }; } catch(e) {} } return { id: Date.now()+i, word: w, translation: cleanTrans||"No def", phonetic: getVal('音标'), pos, note: getVal('笔记'), source: getVal('来源'), keyMeaning: getVal('助记'), ...meta }; }).filter(Boolean); 
+                } else { 
+                    newWords = parseExcelClipboard(text).map((c, i) => { if (c.length < 2) return null; const { pos, cleanTrans } = extractPOS(c[1] || ""); return { id: Date.now()+i, word: c[0], translation: cleanTrans, phonetic: c[2]||"", pos, mastered: c[3]?.toLowerCase()==='yes', note: c[4]||"", source: "Excel", keyMeaning: "", isFavorite: false, archived: false, stats: { correct: 0, wrong: 0 } }; }).filter(Boolean); 
+                } 
+                setPreviewWords(newWords); 
+            }; 
+            
+            const handleConfirm = () => { 
+                let wordsToImport = previewWords;
+                if (excludeExisting && existingWords) {
+                    const existingSet = new Set(existingWords.map(w => w.word.toLowerCase().trim()));
+                    wordsToImport = previewWords.filter(w => !existingSet.has(w.word.toLowerCase().trim()));
+                }
+                
+                onImport(wordsToImport); 
+                setPreviewWords([]); 
+                setText(''); 
+            }; 
+
+            return ( 
+                <div className="p-6 md:p-8 max-w-2xl mx-auto glass-card rounded-3xl h-full flex flex-col"> 
+                    <h3 className="text-lg font-bold text-gray-800 dark:text-gray-100 mb-4 flex items-center"><Icons.Upload className="mr-2 text-indigo-500" /> {t.import_title}</h3> 
+                    {previewWords.length === 0 ? ( 
+                        <div className="space-y-4 flex-1 flex flex-col"> 
+                            <div className="border-2 border-dashed border-indigo-200 dark:border-slate-600 bg-indigo-50/30 dark:bg-slate-700/30 rounded-2xl p-6 text-center relative active:bg-indigo-100 dark:active:bg-slate-700 transition cursor-pointer group"> 
+                                <input type="file" accept=".csv,.txt" onChange={handleFile} className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" /> 
+                                <div className="w-12 h-12 bg-indigo-100 dark:bg-indigo-900/50 text-indigo-500 dark:text-indigo-400 rounded-full flex items-center justify-center mx-auto mb-2"><Icons.FileText size={24} /></div> 
+                                <p className="text-sm font-bold text-indigo-900 dark:text-indigo-300 mb-1">{t.import_click}</p> 
+                                <p className="text-xs text-gray-400">{t.import_desc}</p> 
+                            </div> 
+                            <textarea value={text} onChange={e => setText(e.target.value)} className="w-full flex-1 p-3 border rounded-xl bg-white/50 dark:bg-slate-800/50 text-xs text-gray-800 dark:text-gray-200 border-gray-200 dark:border-slate-600 focus:outline-none focus:border-indigo-500 font-mono" placeholder={t.import_ph}></textarea> 
+                            <button onClick={handleAnalyze} disabled={!text.trim()} className="w-full py-3 bg-indigo-600 disabled:bg-gray-300 dark:disabled:bg-slate-700 text-white rounded-xl font-bold shadow-lg transition-colors">{t.import_check}</button> 
+                        </div> 
+                    ) : ( 
+                        <div className="flex-1 flex flex-col items-center justify-center space-y-6"> 
+                            <div className="w-20 h-20 bg-green-100 dark:bg-green-900/30 text-green-500 rounded-full flex items-center justify-center animate-pop"> 
+                                <Icons.Check size={40} /> 
+                            </div> 
+                            <div className="text-center"> 
+                                <h4 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Found {previewWords.length} Words</h4> 
+                                <p className="text-sm text-gray-500 dark:text-gray-400">Ready to add to your library.</p> 
+                            </div>
+                            
+                            <div className="flex items-center justify-center mb-2">
+                                <label className="flex items-center space-x-2 cursor-pointer bg-gray-50 dark:bg-slate-700/50 px-4 py-2 rounded-xl">
+                                    <input type="checkbox" checked={excludeExisting} onChange={e => setExcludeExisting(e.target.checked)} className="accent-indigo-600 w-4 h-4" />
+                                    <span className="text-sm font-medium text-gray-700 dark:text-gray-300">{t.import_exclude}</span>
+                                </label>
+                            </div>
+
+                            <div className="flex w-full space-x-3"> 
+                                <button onClick={() => setPreviewWords([])} className="flex-1 py-3 bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-gray-300 rounded-xl font-bold">Cancel</button> 
+                                <button onClick={handleConfirm} className="flex-1 py-3 bg-green-500 hover:bg-green-600 text-white rounded-xl font-bold shadow-lg">Confirm</button> 
+                            </div> 
+                        </div> 
+                    )} 
+                </div> 
+            ); 
+        };
+
+        function WordReviewApp() {
+            const [words, setWords] = useState(() => { try { return JSON.parse(localStorage.getItem('my_vocab_data_v4_pro')) || DEMO_DATA; } catch (e) { return DEMO_DATA; } });
+            const [view, setView] = useState('browse');
+            const [browseId, setBrowseId] = useState(null);
+            const [lang, setLang] = useState('zh');
+            const [showPhoneticTable, setShowPhoneticTable] = useState(false);
+            const [showSettings, setShowSettings] = useState(false);
+            const [sortMode, setSortMode] = useState('default'); 
+            const [randomSeed, setRandomSeed] = useState(0);
+            const [toast, setToast] = useState(null);
+            
+            const [theme, setTheme] = useState(() => localStorage.getItem('theme') || 'light');
+            const [syllableMode, setSyllableMode] = useState(() => localStorage.getItem('syllableMode') === 'true');
+            const [apiKey, setApiKey] = useState(() => localStorage.getItem('deepseek_api_key') || '');
+
+            const t = I18N[lang];
+
+            useEffect(() => localStorage.setItem('my_vocab_data_v4_pro', JSON.stringify(words)), [words]);
+            
+            useEffect(() => {
+                if (theme === 'dark') {
+                    document.documentElement.classList.add('dark');
+                } else {
+                    document.documentElement.classList.remove('dark');
+                }
+                localStorage.setItem('theme', theme);
+            }, [theme]);
+
+            useEffect(() => {
+                localStorage.setItem('syllableMode', syllableMode);
+            }, [syllableMode]);
+
+            useEffect(() => {
+                localStorage.setItem('deepseek_api_key', apiKey);
+            }, [apiKey]);
+
+            const showToast = (msg, type='info') => {
+                setToast({ msg, type });
+            };
+
+            const updateWord = (id, changes) => setWords(prev => prev.map(w => w.id === id ? { ...w, ...changes } : w));
+            const deleteWord = (id) => setWords(prev => prev.filter(w => w.id !== id));
+            
+            const handleImportData = (newWords) => {
+                if (newWords.length > 0) { 
+                    setWords(prev => [...prev, ...newWords]); 
+                    setView('list'); 
+                    showToast(t.import_success(newWords.length), 'success');
+                } else { 
+                    showToast("No new words imported", 'info');
+                }
+            };
+
+            const handleExport = () => {
+                if (words.length === 0) { showToast("No data to export", 'error'); return; }
+                const txt = words.map(w => `单词：${w.word}\n释义：${w.translation}\n音标：${w.phonetic}\n笔记：${w.note}\n来源：${w.source}\n助记：${w.keyMeaning}\n数据：${JSON.stringify({mastered:w.mastered,isFavorite:w.isFavorite,archived:w.archived,stats:w.stats, aiAnalysis: w.aiAnalysis})}\n`).join('\n');
+                const blob = new Blob([txt], { type: "text/plain;charset=utf-8" });
+                const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = "backup.txt"; document.body.appendChild(a); a.click(); document.body.removeChild(a);
+            };
+            
+            const fetchPhonetics = async () => { 
+                showToast("Fetching phonetics...", 'info');
+                let c=0; let nws=[...words]; 
+                for(let i=0;i<nws.length;i++){ 
+                    if(!nws[i].phonetic){ 
+                        try{ 
+                            const r=await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${nws[i].word}`); 
+                            if(r.ok){ const d=await r.json(); const p=d[0]?.phonetic||d[0]?.phonetics?.find(x=>x.text)?.text; if(p){nws[i].phonetic=p;c++} } 
+                        }catch(e){} 
+                        await new Promise(r=>setTimeout(r,50)); 
+                    } 
+                } 
+                setWords(nws); 
+                showToast(`Fetched ${c} phonetics`, 'success');
+            };
+
+            const activeWords = useMemo(() => {
+                let filtered = words.filter(w => !w.archived);
+                const shuffle = (array, seed) => {
+                    let m = array.length, t, i;
+                    const seededRandom = (s) => {
+                        var x = Math.sin(s++) * 10000;
+                        return x - Math.floor(x);
+                    };
+                    let map = array.map((item, idx) => ({ item, r: seededRandom(seed + idx) }));
+                    map.sort((a, b) => a.r - b.r);
+                    return map.map(x => x.item);
+                };
+
+                switch (sortMode) {
+                    case 'az': return [...filtered].sort((a, b) => a.word.localeCompare(b.word));
+                    case 'za': return [...filtered].sort((a, b) => b.word.localeCompare(a.word));
+                    case 'random': return shuffle([...filtered], randomSeed);
+                    default: return filtered;
+                }
+            }, [words, sortMode, randomSeed]);
+
+            const handleSetSortMode = (mode) => {
+                if (mode === 'random' && sortMode === 'random') {
+                    setRandomSeed(s => s + 1);
+                } else if (mode === 'random') {
+                    setRandomSeed(Date.now());
+                }
+                setSortMode(mode);
+            };
+
+            const initialIndex = browseId ? activeWords.findIndex(w => w.id === browseId) : 0;
+            const safeIndex = initialIndex >= 0 ? initialIndex : 0;
 
             return (
-                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 flex flex-col min-h-screen">
-                    <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none -z-10">
-                        <div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-                        <div className="absolute top-0 right-1/4 w-96 h-96 bg-yellow-300 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-                    </div>
-                    <header className="px-6 py-4 flex justify-between items-center z-10 max-w-5xl mx-auto w-full">
-                        <div className="glass-card rounded-3xl px-2 py-2 flex space-x-1">
-                            {[{ id: 'browse', iconName: 'Eye', label: t.browse }, { id: 'spelling', iconName: 'Edit3', label: t.spelling }, { id: 'list', iconName: 'List', label: t.list }, { id: 'import', iconName: 'Upload', label: t.import }].map(tab => (
-                                <GlassButton key={tab.id} active={view === tab.id} onClick={() => setView(tab.id)} iconName={tab.iconName} label={tab.label} />
-                            ))}
+                <div className="bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-slate-900 dark:to-slate-800 flex flex-col min-h-screen relative transition-colors duration-300">
+                    <div className="fixed top-0 left-0 w-full h-full overflow-hidden pointer-events-none -z-10"><div className="absolute top-0 left-1/4 w-96 h-96 bg-purple-300 dark:bg-purple-900/30 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-3xl opacity-30 animate-blob"></div><div className="absolute top-0 right-1/4 w-96 h-96 bg-yellow-300 dark:bg-indigo-900/30 rounded-full mix-blend-multiply dark:mix-blend-screen filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div></div>
+                    
+                    <header className="px-4 py-3 z-20 sticky top-0">
+                        <div className="glass-card rounded-2xl p-2 flex items-center justify-between shadow-sm">
+                            <div className="flex space-x-1 overflow-x-auto scrollbar-hide flex-1 mr-2">
+                                {[{ id: 'browse', iconName: 'Eye', label: t.browse }, { id: 'spelling', iconName: 'Edit3', label: t.spelling }, { id: 'list', iconName: 'List', label: t.list }, { id: 'import', iconName: 'Upload', label: t.import }].map(tab => (
+                                    <GlassButton key={tab.id} active={view === tab.id} onClick={() => setView(tab.id)} iconName={tab.iconName} label={tab.label} />
+                                ))}
+                                <GlassButton onClick={() => setShowPhoneticTable(true)} iconName="Wand2" label={t.phonetic_table} className="text-indigo-600 dark:text-indigo-400" />
+                            </div>
+                            
+                            <div className="flex items-center space-x-2">
+                                <button onClick={() => setShowSettings(true)} className="glass-card p-2 rounded-full hover:bg-white/80 dark:hover:bg-slate-700 transition text-gray-500 dark:text-gray-400 flex items-center flex-shrink-0 shadow-sm" title="API Settings"><Icons.Settings size={18} /></button>
+                                <button onClick={() => setTheme(t => t === 'light' ? 'dark' : 'light')} className="glass-card p-2 rounded-full hover:bg-white/80 dark:hover:bg-slate-700 transition text-yellow-500 dark:text-yellow-400 flex items-center flex-shrink-0 shadow-sm">{theme === 'light' ? <Icons.Sun size={18} /> : <Icons.Moon size={18} />}</button>
+                                <button onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')} className="glass-card p-2 rounded-full hover:bg-white/80 dark:hover:bg-slate-700 transition text-indigo-600 dark:text-indigo-400 font-bold flex items-center flex-shrink-0 shadow-sm"><Icons.Globe size={18} className="mr-1" /> {lang.toUpperCase()}</button>
+                            </div>
                         </div>
-                        <button onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')} className="glass-card p-2 rounded-full hover:bg-white/80 transition text-indigo-600 font-bold flex items-center">
-                            <Icons.Globe size={20} className="mr-1" /> {lang.toUpperCase()}
-                        </button>
                     </header>
-                    <main className="flex-1 max-w-5xl mx-auto w-full p-4 md:p-6 flex flex-col relative z-0">
-                        {view === 'browse' && renderBrowse()}
-                        {view === 'spelling' && renderSpellingComp()}
-                        {view === 'list' && renderList()}
-                        {view === 'import' && renderImport()}
+
+                    <main className="flex-1 max-w-5xl mx-auto w-full p-4 flex flex-col relative z-0">
+                        {view === 'browse' && <BrowseView words={activeWords} initialIndex={safeIndex} onUpdateWord={updateWord} setView={setView} onShowPhoneticTable={() => setShowPhoneticTable(true)} t={t} sortMode={sortMode} setSortMode={handleSetSortMode} syllableMode={syllableMode} onToggleSyllableMode={() => setSyllableMode(!syllableMode)} apiKey={apiKey} onOpenSettings={() => setShowSettings(true)} showToast={showToast} />}
+                        {view === 'spelling' && <SpellingView words={activeWords} onUpdateWord={updateWord} t={t} />}
+                        {view === 'list' && <ListView words={words} onUpdateWord={updateWord} onDeleteWord={deleteWord} onClearAll={() => setWords([])} onExport={handleExport} onFetchPhonetics={fetchPhonetics} onJump={(id) => { setBrowseId(id); setView('browse'); }} t={t} />}
+                        {view === 'import' && <ImportView onImport={handleImportData} t={t} existingWords={words} />}
                     </main>
+
+                    {toast && <Toast msg={toast.msg} type={toast.type} onClose={() => setToast(null)} />}
+                    <PhoneticModal isOpen={showPhoneticTable} onClose={() => setShowPhoneticTable(false)} />
+                    <SettingsModal isOpen={showSettings} onClose={() => setShowSettings(false)} apiKey={apiKey} setApiKey={setApiKey} />
                 </div>
             );
         }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<WordReviewApp />);
     </script>
